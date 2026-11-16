@@ -1,0 +1,1745 @@
+diff --git a/native/Cargo.toml b/native/Cargo.toml
+index d206e39..d2cfc69 100644
+--- a/native/Cargo.toml
++++ b/native/Cargo.toml
+@@ -51,6 +51,7 @@ livi-aaudio = { path = "crates/livi-aaudio" }
+ livi-audio = { path = "crates/livi-audio" }
+ livi-bt-host = { path = "crates/livi-bt-host" }
+ livi-btd = { path = "crates/livi-btd" }
++livi-carlife-shim = { path = "crates/livi-carlife-shim" }
+ livi-core = { path = "crates/livi-core" }
+ livi-core-client = { path = "crates/livi-core-client" }
+ livi-core-proto = { path = "crates/livi-core-proto" }
+@@ -80,6 +81,7 @@ livi-video-view = { path = "crates/livi-video-view" }
+ livi-web = { path = "crates/livi-web" }
+ livi-wifi = { path = "crates/livi-wifi" }
+ livi-wifid = { path = "crates/livi-wifid" }
++rcf-lite = { path = "crates/rcf-lite" }
+ 
+ # The DAB+ and FM receivers demodulate in real time, also in debug builds.
+ [profile.dev.package.livi-dab]
+diff --git a/native/crates/livi-aa-proto/src/consts.rs b/native/crates/livi-aa-proto/src/consts.rs
+index a6d988a..1caaf51 100644
+--- a/native/crates/livi-aa-proto/src/consts.rs
++++ b/native/crates/livi-aa-proto/src/consts.rs
+@@ -101,6 +101,8 @@ pub mod bluetooth_msg {
+ 
+     pub const PAIRING_REQUEST: u16 = Id::PairingRequest as u16;
+     pub const PAIRING_RESPONSE: u16 = Id::PairingResponse as u16;
++    pub const AUTHENTICATION_REQUEST: u16 = Id::AuthenticationRequest as u16;
++    pub const AUTHENTICATION_RESPONSE: u16 = Id::AuthenticationResponse as u16;
+ }
+ 
+ pub mod wifi_msg {
+diff --git a/native/crates/livi-aa-stack/src/bridge.rs b/native/crates/livi-aa-stack/src/bridge.rs
+index 4e13f9a..82a3d1b 100644
+--- a/native/crates/livi-aa-stack/src/bridge.rs
++++ b/native/crates/livi-aa-stack/src/bridge.rs
+@@ -115,6 +115,10 @@ pub enum Report {
+         projected: bool,
+     },
+     HostUiRequested,
++    BtPairingRequest {
++        address: String,
++        method: i32,
++    },
+     Audio {
+         stream: AudioChannelType,
+         sample_rate: u32,
+@@ -361,6 +365,9 @@ impl Bridge {
+                 println!("[AaEventBridge] host UI requested");
+                 report(&mut out, Report::HostUiRequested);
+             }
++            SessionEvent::BtPairingRequest { address, method } => {
++                report(&mut out, Report::BtPairingRequest { address, method });
++            }
+             SessionEvent::MediaMetadata(m) => self.metadata(&mut out, m),
+             SessionEvent::MediaStatus(s) => self.status(&mut out, s),
+             SessionEvent::Navigation(n) => self.navigation(&mut out, n),
+diff --git a/native/crates/livi-aa-stack/src/channels/navigation.rs b/native/crates/livi-aa-stack/src/channels/navigation.rs
+index dda2c08..f2d1977 100644
+--- a/native/crates/livi-aa-stack/src/channels/navigation.rs
++++ b/native/crates/livi-aa-stack/src/channels/navigation.rs
+@@ -212,17 +212,26 @@ impl NavigationChannel {
+             }
+             nav_msg::STATE => {
+                 let s = decode_state(payload);
+-                println!(
++                // The phone sends its state about once a second: logged when it changes, so a
++                // drive with guidance does not fill the unit's syslog (5 MB, in RAM).
++                let line = format!(
+                     "[NavigationChannel] state maneuver={} road={} dest={}",
+                     opt(&s.maneuver_type),
+                     opt(&s.road_name),
+                     opt(&s.destination_address)
+                 );
++                static LAST_STATE: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
++                let mut last = LAST_STATE.lock().unwrap_or_else(|e| e.into_inner());
++                if *last != line {
++                    println!("{line}");
++                    *last = line;
++                }
+                 Some(NavigationEvent::State(s))
+             }
+             nav_msg::CURRENT_POSITION => {
+                 let p = decode_position(payload);
+-                println!(
++                // Every second while guiding: debug only.
++                detail!(
+                     "[NavigationChannel] position dest={}m eta={} ttarr={}s step={}m",
+                     opt(&p.destination_meters),
+                     opt(&p.eta_text),
+diff --git a/native/crates/livi-aa-stack/src/config.rs b/native/crates/livi-aa-stack/src/config.rs
+index 476a6be..79d42ed 100644
+--- a/native/crates/livi-aa-stack/src/config.rs
++++ b/native/crates/livi-aa-stack/src/config.rs
+@@ -11,6 +11,12 @@ use crate::wire::round_half_up;
+ pub struct AaConfig {
+     pub summary: String,
+     pub hu_name: Option<String>,
++    // Head-unit make/model sent in the ServiceDiscoveryResponse (manufacturer / head_unit_make /
++    // model / head_unit_model + CarInfo). The Android Auto phone keys the "return to car" / exit
++    // button logo off the make string: "Volkswagen" -> VW logo, an unknown string -> generic
++    // "Exit". None here falls back to the VW defaults in discovery.rs.
++    pub hu_make: Option<String>,
++    pub hu_model: Option<String>,
+     pub video_width: Option<u32>,
+     pub video_height: Option<u32>,
+     pub video_dpi: Option<u32>,
+@@ -22,6 +28,17 @@ pub struct AaConfig {
+     pub main_safe_area: Insets,
+     pub driver_position: u8,
+     pub bt_mac_address: Option<String>,
++    /// Advertise bt_mac_address only to sessions without a device id (wireless adapters). A
++    /// phone that gets the car's address tries to connect to the car over Bluetooth, and the
++    /// head unit's own Bluetooth stack then asks for pairing unless the two are paired already.
++    pub bt_mac_adapters_only: bool,
++    /// The phone's BluetoothPairingRequest goes to the host (SessionEvent::BtPairingRequest),
++    /// which answers with SessionCmd::BtPairingResponse, instead of an immediate "already
++    /// paired"; the host can then pair seamlessly (SessionCmd::BtAuthentication).
++    pub bt_pairing_by_host: bool,
++    /// BluetoothService.supported_pairing_methods in service discovery, in order (empty: PIN,
++    /// numeric comparison). The phone picks one for its BluetoothPairingRequest.
++    pub bt_pairing_methods: Vec<i32>,
+     pub wifi_bssid: Option<String>,
+     pub wifi_ssid: String,
+     pub wifi_password: String,
+@@ -29,10 +46,21 @@ pub struct AaConfig {
+     pub wifi_channel: Option<u32>,
+     pub fuel_types: Vec<i32>,
+     pub ev_connector_types: Vec<i32>,
++    /// SensorSourceService.supported_sensors in service discovery, as SensorType values
++    /// (empty: every type the stack can send). A host that feeds only some lists just those,
++    /// so the phone does not wait for data that never comes (see discovery::DRIVING_SENSORS).
++    pub sensor_types: Vec<i32>,
++    /// The car's own audio had the speakers when the unit was last switched off (last mode):
++    /// the phone's first media GAIN request in the first 10 s of a session, before any user
++    /// input (its autoplay), is answered LOSS, so it does not take the speakers back.
++    pub refuse_autoplay: bool,
+     pub hevc_supported: bool,
+     pub vp9_supported: bool,
+     pub av1_supported: bool,
+     pub initial_night_mode: Option<bool>,
++    /// DrivingStatus restrictions the phone gets when it starts that sensor (None: 0,
++    /// unrestricted); a head unit that knows the car is moving keeps this current.
++    pub initial_driving_status: Option<i32>,
+     pub cluster_enabled: bool,
+     pub cluster_width: u32,
+     pub cluster_height: u32,
+@@ -223,6 +251,8 @@ pub fn from_livi(
+     AaConfig {
+         summary,
+         hu_name: Some(name.clone()),
++        hu_make: None, // -> discovery.rs VW default
++        hu_model: None,
+         video_width: Some(tier_w),
+         video_height: Some(tier_h),
+         video_dpi: Some(dpi),
+@@ -244,6 +274,9 @@ pub fn from_livi(
+         },
+         driver_position: u8::from(cfg.hand == HandDriveType::Rhd),
+         bt_mac_address: addresses.bt_mac.clone(),
++        bt_mac_adapters_only: false,
++        bt_pairing_by_host: false,
++        bt_pairing_methods: Vec::new(),
+         wifi_bssid: addresses.wifi_bssid.clone(),
+         wifi_ssid: on_air
+             .map(|ap| ap.ssid.clone())
+@@ -263,10 +296,13 @@ pub fn from_livi(
+             .flatten()
+             .map(|t| *t as i32)
+             .collect(),
++        sensor_types: Vec::new(),
++        refuse_autoplay: false,
+         hevc_supported: codecs.hevc,
+         vp9_supported: codecs.vp9,
+         av1_supported: codecs.av1,
+         initial_night_mode,
++        initial_driving_status: None,
+         cluster_enabled: cluster,
+         cluster_width: cfg.cluster_width,
+         cluster_height: cfg.cluster_height,
+diff --git a/native/crates/livi-aa-stack/src/control.rs b/native/crates/livi-aa-stack/src/control.rs
+index 1be18b1..d9c432f 100644
+--- a/native/crates/livi-aa-stack/src/control.rs
++++ b/native/crates/livi-aa-stack/src/control.rs
+@@ -51,9 +51,17 @@ pub fn audio_focus_state(focus_type: u8) -> u8 {
+ }
+ 
+ #[derive(Debug, Default)]
+-pub struct ControlChannel;
++pub struct ControlChannel {
++    /// Answer the next media GAIN request with LOSS once (Session: refuse_autoplay).
++    refuse_gain: bool,
++}
+ 
+ impl ControlChannel {
++    /// Arm (or drop) the one-time refusal of a media GAIN request; whether it was armed.
++    pub fn refuse_next_gain(&mut self, on: bool) -> bool {
++        std::mem::replace(&mut self.refuse_gain, on)
++    }
++
+     pub fn handle_message(&mut self, msg_id: u16, payload: &[u8]) -> Vec<ControlOut> {
+         let mut out = Vec::new();
+         match msg_id {
+@@ -214,7 +222,14 @@ impl ControlChannel {
+         }
+         let focus_type =
+             decode::<AudioFocusRequest>(payload, &[1]).map_or(0, |r| r.request_type as u8);
+-        let state = audio_focus_state(focus_type);
++        let mut state = audio_focus_state(focus_type);
++        if focus_type == 1 && std::mem::take(&mut self.refuse_gain) {
++            state = 3;
++            println!(
++                "[ControlChannel] AudioFocus GAIN refused once: the car's own audio had the \
++                 speakers (last mode), so the phone does not autoplay over it"
++            );
++        }
+         let type_name = match focus_type {
+             1 => "GAIN",
+             2 => "GAIN_TRANSIENT",
+@@ -268,7 +283,7 @@ mod tests {
+ 
+     #[test]
+     fn a_ping_is_answered_encrypted() {
+-        let mut c = ControlChannel;
++        let mut c = ControlChannel::default();
+         let out = c.handle_message(ctrl_msg::PING_REQUEST, &[0x08, 0xe8, 0x07]);
+         assert_eq!(
+             frames(&out),
+@@ -292,7 +307,7 @@ mod tests {
+ 
+     #[test]
+     fn a_goodbye_is_read_from_its_field_and_answered() {
+-        let mut c = ControlChannel;
++        let mut c = ControlChannel::default();
+         let out = c.handle_message(ctrl_msg::BYEBYE_REQUEST, &[0x08, 0x02]);
+         assert_eq!(
+             frames(&out),
+@@ -315,7 +330,7 @@ mod tests {
+ 
+     #[test]
+     fn audio_focus_is_granted_by_type() {
+-        let mut c = ControlChannel;
++        let mut c = ControlChannel::default();
+         for (req, state) in [(1u8, 1u8), (2, 2), (3, 2), (4, 3), (9, 3)] {
+             let out = c.handle_message(ctrl_msg::AUDIO_FOCUS_REQUEST, &[0x08, req]);
+             assert_eq!(frames(&out)[0].payload, [0x08, state]);
+@@ -328,7 +343,7 @@ mod tests {
+ 
+     #[test]
+     fn the_rest_of_the_control_messages() {
+-        let mut c = ControlChannel;
++        let mut c = ControlChannel::default();
+         let out = c.handle_message(ctrl_msg::NAV_FOCUS_REQUEST, &[0x08, 0x02]);
+         assert_eq!(frames(&out)[0].msg_id, ctrl_msg::NAV_FOCUS_NOTIFICATION);
+         assert_eq!(frames(&out)[0].payload, [0x08, 0x02]);
+diff --git a/native/crates/livi-aa-stack/src/discovery.rs b/native/crates/livi-aa-stack/src/discovery.rs
+index c143a6c..e6558d7 100644
+--- a/native/crates/livi-aa-stack/src/discovery.rs
++++ b/native/crates/livi-aa-stack/src/discovery.rs
+@@ -124,6 +124,15 @@ const KEYCODES: [Keycode; 50] = [
+     Keycode::Tel,
+ ];
+ 
++/// The sensors of a host that feeds only the car's driving data: speed, gear, night mode, and
++/// the driving status derived from the speed (AaConfig::sensor_types).
++pub const DRIVING_SENSORS: [SensorType; 4] = [
++    SensorType::DrivingStatusData,
++    SensorType::NightMode,
++    SensorType::Speed,
++    SensorType::Gear,
++];
++
+ const SENSORS: [SensorType; 21] = [
+     SensorType::DrivingStatusData,
+     SensorType::Location,
+@@ -353,16 +362,23 @@ pub fn build(cfg: &AaConfig) -> Discovery {
+     } else {
+         cfg.fuel_types.clone()
+     };
++    let sensor_types: Vec<i32> = if cfg.sensor_types.is_empty() {
++        SENSORS.iter().map(|t| *t as i32).collect()
++    } else {
++        cfg.sensor_types.clone()
++    };
++    // How the location is made only means something with a location to send.
++    let location_characterization = sensor_types
++        .contains(&(SensorType::Location as i32))
++        .then_some(LOCATION_CHARACTERIZATION);
+     channels.push(Service {
+         id: i32::from(ch::SENSOR),
+         sensor_source: Some(SensorSourceService {
+-            supported_sensors: SENSORS
++            supported_sensors: sensor_types
+                 .iter()
+-                .map(|t| SupportedSensor {
+-                    sensor_type: *t as i32,
+-                })
++                .map(|t| SupportedSensor { sensor_type: *t })
+                 .collect(),
+-            location_characterization: Some(LOCATION_CHARACTERIZATION),
++            location_characterization,
+             fuel_types,
+             ev_connector_types: cfg.ev_connector_types.clone(),
+         }),
+@@ -391,10 +407,14 @@ pub fn build(cfg: &AaConfig) -> Discovery {
+                 .bt_mac_address
+                 .clone()
+                 .unwrap_or_else(|| "00:00:00:00:00:00".to_string()),
+-            supported_pairing_methods: vec![
+-                BluetoothPairingMethod::Pin as i32,
+-                BluetoothPairingMethod::NumericComparison as i32,
+-            ],
++            supported_pairing_methods: if cfg.bt_pairing_methods.is_empty() {
++                vec![
++                    BluetoothPairingMethod::Pin as i32,
++                    BluetoothPairingMethod::NumericComparison as i32,
++                ]
++            } else {
++                cfg.bt_pairing_methods.clone()
++            },
+         }),
+         ..Default::default()
+     });
+@@ -432,11 +452,15 @@ pub fn build(cfg: &AaConfig) -> Discovery {
+         });
+     }
+ 
+-    let make = || Some("LIVI".to_string());
+-    let model = || Some("Universal".to_string());
++    // make/model are config-driven; the AA phone keys its exit-button logo off the make string
++    // (e.g. "Volkswagen" -> VW logo). The fallbacks here keep the stack's original identity when
++    // a caller sets nothing (so the upstream dongle + parity vectors are unchanged); the Desay
++    // headless binary supplies the Volkswagen defaults via AaConfig (see livi-aa-headless).
++    let make = || Some(cfg.hu_make.clone().unwrap_or_else(|| "LIVI".to_string()));
++    let model = || Some(cfg.hu_model.clone().unwrap_or_else(|| "Universal".to_string()));
+     let year = || Some("2026".to_string());
+     let vehicle = || Some("livi-001".to_string());
+-    let hu_model = || Some("LIVI Head Unit".to_string());
++    let hu_model = || Some(cfg.hu_model.clone().unwrap_or_else(|| "LIVI Head Unit".to_string()));
+     let build_no = || Some("1".to_string());
+     let version = || Some("1.0".to_string());
+     let channel_count = channels.len();
+@@ -512,6 +536,30 @@ mod tests {
+         assert_eq!((touch.width, touch.height), (1280, 720));
+     }
+ 
++    #[test]
++    fn sensors_follow_the_config() {
++        let sensors = |cfg: &AaConfig| {
++            let sdr = decoded(cfg);
++            let s = sdr
++                .services
++                .iter()
++                .find_map(|c| c.sensor_source.clone())
++                .unwrap();
++            let types: Vec<i32> = s.supported_sensors.iter().map(|t| t.sensor_type).collect();
++            (types, s.location_characterization)
++        };
++        let (all, loc) = sensors(&AaConfig::default());
++        assert_eq!(all.len(), SENSORS.len());
++        assert_eq!(loc, Some(LOCATION_CHARACTERIZATION));
++        let driving: Vec<i32> = DRIVING_SENSORS.iter().map(|t| *t as i32).collect();
++        let (some, loc) = sensors(&AaConfig {
++            sensor_types: driving.clone(),
++            ..Default::default()
++        });
++        assert_eq!(some, driving);
++        assert_eq!(loc, None);
++    }
++
+     #[test]
+     fn call_audio_is_offered_only_when_asked() {
+         let sdr = decoded(&AaConfig {
+diff --git a/native/crates/livi-aa-stack/src/driver.rs b/native/crates/livi-aa-stack/src/driver.rs
+index dd80e65..faaa17c 100644
+--- a/native/crates/livi-aa-stack/src/driver.rs
++++ b/native/crates/livi-aa-stack/src/driver.rs
+@@ -36,9 +36,17 @@ pub enum SessionCmd {
+     MultiTouch(Vec<TouchItem>),
+     Command(Command),
+     Input(InputCommand),
++    /// One key event with Android Auto's long_press flag as given (a held key's down events).
++    Key {
++        code: u32,
++        down: bool,
++        long_press: bool,
++    },
+     Disconnect,
+     Keyframe,
+     ClusterActive(bool),
++    /// The main video is on the car's screen (true) or the car shows its own (false).
++    MainProjected(bool),
+     VideoActive(bool),
+     StreamVolume {
+         kind: AudioKind,
+@@ -46,6 +54,12 @@ pub enum SessionCmd {
+         ramp_ms: u32,
+     },
+     Sensor(Sensor),
++    /// An unsolicited AudioFocusNotification with this AudioFocusState.
++    AudioFocus(i32),
++    /// The answer to SessionEvent::BtPairingRequest.
++    BtPairingResponse { already_paired: bool },
++    /// BluetoothAuthenticationRequest with this pairing key.
++    BtAuthentication(String),
+     Close,
+     PowerDown,
+ }
+@@ -312,6 +326,16 @@ impl<M: AaMedia> Phone<M> {
+     }
+ 
+     fn on_cmd(&mut self, cmd: SessionCmd) {
++        if matches!(
++            cmd,
++            SessionCmd::Touch { .. }
++                | SessionCmd::MultiTouch(_)
++                | SessionCmd::Command(_)
++                | SessionCmd::Input(_)
++                | SessionCmd::Key { .. }
++        ) {
++            self.session.user_input();
++        }
+         let out = match cmd {
+             SessionCmd::Touch { action, x, y } => {
+                 let g = self.session.geometry();
+@@ -340,6 +364,7 @@ impl<M: AaMedia> Phone<M> {
+                 Action::Nothing => Vec::new(),
+             },
+             SessionCmd::Input(i) => self.click(input_key(i)),
++            SessionCmd::Key { code, down, long_press } => self.session.send_key(&[code], down, long_press),
+             SessionCmd::Disconnect => self.session.request_shutdown(BYEBYE_USER_SELECTION),
+             SessionCmd::Keyframe => {
+                 let mut out = self.session.request_main_keyframe();
+@@ -347,6 +372,7 @@ impl<M: AaMedia> Phone<M> {
+                 out
+             }
+             SessionCmd::ClusterActive(active) => self.session.set_cluster_stream_active(active),
++            SessionCmd::MainProjected(projected) => self.session.set_main_projected(projected),
+             SessionCmd::VideoActive(active) => {
+                 self.media.set_active(self.id, active);
+                 Vec::new()
+@@ -360,6 +386,11 @@ impl<M: AaMedia> Phone<M> {
+                 Vec::new()
+             }
+             SessionCmd::Sensor(s) => self.session.send_sensor(&s),
++            SessionCmd::AudioFocus(state) => self.session.send_audio_focus(state),
++            SessionCmd::BtPairingResponse { already_paired } => {
++                self.session.send_bt_pairing_response(already_paired)
++            }
++            SessionCmd::BtAuthentication(key) => self.session.send_bt_authentication(key),
+             SessionCmd::Close => {
+                 self.begin_close(BYEBYE_USER_SELECTION);
+                 Vec::new()
+diff --git a/native/crates/livi-aa-stack/src/manager.rs b/native/crates/livi-aa-stack/src/manager.rs
+index f02be09..c11c320 100644
+--- a/native/crates/livi-aa-stack/src/manager.rs
++++ b/native/crates/livi-aa-stack/src/manager.rs
+@@ -70,6 +70,11 @@ pub enum AaEvent {
+     HostUiRequested {
+         id: SessionId,
+     },
++    BtPairingRequest {
++        id: SessionId,
++        address: String,
++        method: i32,
++    },
+     Audio {
+         id: SessionId,
+         stream: AudioChannelType,
+@@ -126,6 +131,9 @@ impl AaEvent {
+                 projected,
+             },
+             Report::HostUiRequested => Self::HostUiRequested { id },
++            Report::BtPairingRequest { address, method } => {
++                Self::BtPairingRequest { id, address, method }
++            }
+             Report::Audio {
+                 stream,
+                 sample_rate,
+diff --git a/native/crates/livi-aa-stack/src/protocol.rs b/native/crates/livi-aa-stack/src/protocol.rs
+index 9a9d31e..9183080 100644
+--- a/native/crates/livi-aa-stack/src/protocol.rs
++++ b/native/crates/livi-aa-stack/src/protocol.rs
+@@ -9,7 +9,8 @@ use tokio::sync::watch;
+ use tokio::time::Instant;
+ 
+ use livi_aa_proto::{
+-    AuthCompleteNotification, BluetoothPairingRequest, BluetoothPairingResponse,
++    AudioFocusNotification, AuthCompleteNotification, BluetoothAuthenticationRequest,
++    BluetoothAuthenticationResponse, BluetoothPairingRequest, BluetoothPairingResponse,
+     ChannelOpenResponse, KeyBindingResponse, MediaConfigResponse, MediaConfigStatus,
+     MediaSetupRequest, MessageStatus, PhoneStatusNotification, PingRequest, SensorRequest,
+     SensorResponse, VideoFocusMode, VideoFocusNotification, WifiAccessPointType,
+@@ -42,6 +43,8 @@ const PING_TIMEOUT: Duration = Duration::from_millis(5000);
+ const WATCHDOG: Duration = Duration::from_secs(30);
+ const KEYFRAME_FOLLOW_UP: Duration = Duration::from_millis(60);
+ const SHUTDOWN_ACK: Duration = Duration::from_secs(1);
++/// How long after the session starts the phone's media GAIN counts as its autoplay.
++const AUTOPLAY_WINDOW: Duration = Duration::from_secs(10);
+ 
+ pub const BYEBYE_USER_SELECTION: u8 = 1;
+ pub const BYEBYE_POWER_DOWN: u8 = 7;
+@@ -71,6 +74,7 @@ pub enum Timer {
+     MainKeyframe,
+     ClusterKeyframe,
+     ShutdownTimeout,
++    AutoplayWindow,
+ }
+ 
+ #[derive(Debug, Clone, PartialEq, Eq)]
+@@ -131,6 +135,11 @@ pub enum SessionEvent {
+     VoiceSession(bool),
+     AudioFocus(u8),
+     HostUiRequested,
++    /// The phone's BluetoothPairingRequest, for a host that answers it (bt_pairing_by_host).
++    BtPairingRequest {
++        address: String,
++        method: i32,
++    },
+     DeviceInfo {
+         name: String,
+         model: String,
+@@ -247,11 +256,15 @@ pub struct Session {
+     video_codecs: Vec<VideoCodec>,
+     video_codec: Option<VideoCodec>,
+     phone_codec_logged: bool,
++    /// The phone's own pings logged so far this session (log_phone_ping).
++    phone_pings_logged: u8,
+     cluster_codecs: Vec<VideoCodec>,
+     cluster_codec: Option<VideoCodec>,
+     main_frame_seen: bool,
+     cluster_focus_pending: bool,
+     cluster_stream_wanted: bool,
++    /// The car shows its own screen: the main video focus is NATIVE (set_main_projected).
++    main_native: bool,
+     shutdowns_waiting: u32,
+ }
+ 
+@@ -273,7 +286,7 @@ impl Session {
+             ping_running: false,
+             ping_interval: PING_INTERVAL,
+             ping_timeout: PING_TIMEOUT,
+-            control: ControlChannel,
++            control: ControlChannel::default(),
+             video: VideoChannel::new(ch::VIDEO),
+             cluster: VideoChannel::new(ch::CLUSTER_VIDEO),
+             audio: [ch::MEDIA_AUDIO, ch::SPEECH_AUDIO, ch::SYSTEM_AUDIO]
+@@ -287,11 +300,13 @@ impl Session {
+             video_codecs: Vec::new(),
+             video_codec: None,
+             phone_codec_logged: false,
++            phone_pings_logged: 0,
+             cluster_codecs: Vec::new(),
+             cluster_codec: None,
+             main_frame_seen: false,
+             cluster_focus_pending: false,
+             cluster_stream_wanted: true,
++            main_native: false,
+             shutdowns_waiting: 0,
+         };
+         (session, vec![Out::After(WATCHDOG, Timer::Watchdog)])
+@@ -417,6 +432,9 @@ impl Session {
+                     self.event(&mut out, SessionEvent::ClusterVideoStarted);
+                 }
+             }
++            // The session reopened its feed to the host (the host restarted): the new
++            // decoder starts on a keyframe.
++            Some("feed-reopened") => out.extend(self.request_main_keyframe()),
+             Some("eof") => {
+                 self.stop_ping(&mut out);
+                 if self.state != State::Running {
+@@ -558,28 +576,44 @@ impl Session {
+             }
+             ch::BLUETOOTH => {
+                 if msg_id == bluetooth_msg::PAIRING_REQUEST {
+-                    match decode::<BluetoothPairingRequest>(payload, &[1, 2]) {
+-                        Ok(req) => detail!(
+-                            "[Session] BT pairing request from {} -> already paired",
+-                            req.phone_address
+-                        ),
+-                        Err(e) => {
+-                            if debug() {
+-                                eprintln!("[Session] BT pairing request parse error: {e}");
++                    let req = decode::<BluetoothPairingRequest>(payload, &[1, 2]);
++                    if let Err(e) = &req {
++                        if debug() {
++                            eprintln!("[Session] BT pairing request parse error: {e}");
++                        }
++                    }
++                    let by_host = self.config.borrow().bt_pairing_by_host;
++                    match req {
++                        Ok(req) if by_host => {
++                            println!(
++                                "[Session] BT pairing request from {} (method {}) -> asking the host",
++                                req.phone_address, req.pairing_method
++                            );
++                            self.event(
++                                &mut out,
++                                SessionEvent::BtPairingRequest {
++                                    address: req.phone_address,
++                                    method: req.pairing_method,
++                                },
++                            );
++                        }
++                        _ => {
++                            if let Ok(req) = &req {
++                                detail!(
++                                    "[Session] BT pairing request from {} -> already paired",
++                                    req.phone_address
++                                );
+                             }
++                            out.extend(self.send_bt_pairing_response(true));
+                         }
+                     }
+-                    let resp = encode(&BluetoothPairingResponse {
+-                        status: OK,
+-                        already_paired: true,
+-                    });
+-                    self.send_to(
+-                        &mut out,
+-                        ch::BLUETOOTH,
+-                        frame_flags::ENC_SIGNAL,
+-                        bluetooth_msg::PAIRING_RESPONSE,
+-                        resp,
+-                    );
++                } else if msg_id == bluetooth_msg::AUTHENTICATION_RESPONSE {
++                    match decode::<BluetoothAuthenticationResponse>(payload, &[1]) {
++                        Ok(r) => println!("[Session] BT authentication response: status {}", r.status),
++                        Err(e) => println!("[Session] BT authentication response parse error: {e}"),
++                    }
++                } else {
++                    println!("[Session] BT message 0x{msg_id:04x} ({} bytes)", payload.len());
+                 }
+                 return out;
+             }
+@@ -701,13 +735,12 @@ impl Session {
+     fn on_control_event(&mut self, out: &mut Vec<Out>, event: ControlEvent) {
+         match event {
+             ControlEvent::ServiceDiscoveryRequest(req) => {
+-                if debug() {
+-                    println!(
+-                        "[Session] Phone: {} / {}",
+-                        req.head_unit_label.as_deref().unwrap_or("?"),
+-                        req.phone_make_and_model.as_deref().unwrap_or("?")
+-                    );
+-                }
++                // Once per session, also without DEBUG: which phone a session log is about.
++                println!(
++                    "[Session] Phone: {} / {}",
++                    req.head_unit_label.as_deref().unwrap_or("?"),
++                    req.phone_make_and_model.as_deref().unwrap_or("?")
++                );
+                 let name = req.head_unit_label.clone().unwrap_or_default();
+                 let model = req.phone_make_and_model.clone().unwrap_or_default();
+                 let instance_id = req
+@@ -715,6 +748,8 @@ impl Session {
+                     .as_ref()
+                     .and_then(|p| p.mobile_device_id.clone())
+                     .unwrap_or_default();
++                // A phone sends its device id; a wireless adapter (seen: VehiConn) sends none.
++                let adapter = instance_id.is_empty();
+                 if !name.is_empty() || !model.is_empty() || !instance_id.is_empty() {
+                     let ip = self.peer();
+                     self.event(
+@@ -727,10 +762,13 @@ impl Session {
+                         },
+                     );
+                 }
+-                let cfg = self.config.borrow().clone();
++                let mut cfg = self.config.borrow().clone();
+                 if !cfg.summary.is_empty() {
+                     println!("[AaSession] {}", cfg.summary);
+                 }
++                if cfg.bt_mac_adapters_only && !adapter && cfg.bt_mac_address.take().is_some() {
++                    println!("[AaSession] car Bluetooth address not advertised to a phone on USB");
++                }
+                 let sdr = discovery::build(&cfg);
+                 self.advertised = Some(cfg);
+                 self.video_codecs = sdr.video_codecs;
+@@ -769,7 +807,7 @@ impl Session {
+             ControlEvent::AvSetupRequest { ch, payload } => {
+                 self.on_av_setup_request(out, ch, &payload);
+             }
+-            ControlEvent::Ping(_) => {}
++            ControlEvent::Ping(timestamp_ns) => self.log_phone_ping(timestamp_ns),
+             ControlEvent::Pong => self.last_pong = Instant::now(),
+             ControlEvent::AudioFocusRequest(t) => self.event(out, SessionEvent::AudioFocus(t)),
+             ControlEvent::Battery {
+@@ -864,7 +902,7 @@ impl Session {
+                 out.extend(self.close("pre-RUNNING watchdog"));
+             }
+             Timer::MainKeyframe => {
+-                if self.state == State::Running {
++                if self.state == State::Running && !self.main_native {
+                     self.send_to(
+                         &mut out,
+                         ch::VIDEO,
+@@ -891,10 +929,23 @@ impl Session {
+                     self.finish_shutdown(&mut out, "fallback timeout (no ByeByeResponse)");
+                 }
+             }
++            Timer::AutoplayWindow => {
++                if self.control.refuse_next_gain(false) {
++                    println!("[Session] no autoplay in the first 10 s: media focus granted as usual");
++                }
++            }
+         }
+         out
+     }
+ 
++    /// The user touched or pressed something: a media GAIN from now on is their choice, never
++    /// the autoplay to refuse (AaConfig::refuse_autoplay).
++    pub fn user_input(&mut self) {
++        if self.control.refuse_next_gain(false) {
++            println!("[Session] user input: media focus granted as usual from now on");
++        }
++    }
++
+     fn on_av_setup_request(&mut self, out: &mut Vec<Out>, c: u8, payload: &[u8]) {
+         let codec = match decode::<MediaSetupRequest>(payload, &[1]) {
+             Ok(req) => req.codec_type,
+@@ -993,6 +1044,14 @@ impl Session {
+             );
+             self.transition(out, State::Running, "");
+             self.event(out, SessionEvent::Connected);
++            if self.config.borrow().refuse_autoplay {
++                self.control.refuse_next_gain(true);
++                out.push(Out::After(AUTOPLAY_WINDOW, Timer::AutoplayWindow));
++                println!(
++                    "[Session] last mode: the car's own audio had the speakers; the phone's \
++                     autoplay is refused once (first 10 s)"
++                );
++            }
+         } else if c == ch::CLUSTER_VIDEO {
+             self.request_cluster_stream(out);
+         }
+@@ -1012,13 +1071,10 @@ impl Session {
+             resp,
+         );
+         if sensor_type == 13 {
+-            self.send_to(
+-                out,
+-                ch::SENSOR,
+-                frame_flags::ENC_SIGNAL,
+-                sensor_msg::BATCH,
+-                [0x6a, 0x02, 0x08, 0x00],
+-            );
++            let restrictions = self.config.borrow().initial_driving_status.unwrap_or(0);
++            if let Some(batch) = sensors::batch(&Sensor::DrivingStatus(restrictions)) {
++                self.send_to(out, ch::SENSOR, frame_flags::ENC_SIGNAL, sensor_msg::BATCH, batch);
++            }
+         } else if sensor_type == 10 {
+             let night = self.config.borrow().initial_night_mode == Some(true);
+             self.send_to(
+@@ -1126,11 +1182,16 @@ impl Session {
+     }
+ 
+     pub fn send_button(&mut self, codes: &[u32], down: bool) -> Vec<Out> {
++        self.send_key(codes, down, false)
++    }
++
++    /// A key event with the long_press flag as given.
++    pub fn send_key(&mut self, codes: &[u32], down: bool, long_press: bool) -> Vec<Out> {
+         let mut out = Vec::new();
+         if self.state != State::Running {
+             return out;
+         }
+-        if let Some(frame) = input::button(self.ts_micros(), codes, down, false) {
++        if let Some(frame) = input::button(self.ts_micros(), codes, down, long_press) {
+             self.send(&mut out, frame);
+         }
+         out
+@@ -1166,6 +1227,62 @@ impl Session {
+         out
+     }
+ 
++    /// BluetoothPairingResponse: whether the car already knows the phone (a host answering
++    /// SessionEvent::BtPairingRequest, or the default "already paired").
++    pub fn send_bt_pairing_response(&mut self, already_paired: bool) -> Vec<Out> {
++        let mut out = Vec::new();
++        let resp = encode(&BluetoothPairingResponse {
++            status: OK,
++            already_paired,
++        });
++        self.send_to(
++            &mut out,
++            ch::BLUETOOTH,
++            frame_flags::ENC_SIGNAL,
++            bluetooth_msg::PAIRING_RESPONSE,
++            resp,
++        );
++        println!("[Session] BT pairing response: already_paired={already_paired}");
++        out
++    }
++
++    /// BluetoothAuthenticationRequest: the pairing key the car's Bluetooth shows (SSP numeric
++    /// comparison value or PIN), so the phone confirms the bonding without asking the user.
++    pub fn send_bt_authentication(&mut self, pairing_key: String) -> Vec<Out> {
++        let mut out = Vec::new();
++        println!("[Session] BT authentication request: pairing key {pairing_key}");
++        self.send_to(
++            &mut out,
++            ch::BLUETOOTH,
++            frame_flags::ENC_SIGNAL,
++            bluetooth_msg::AUTHENTICATION_REQUEST,
++            encode(&BluetoothAuthenticationRequest { pairing_key }),
++        );
++        out
++    }
++
++    /// An unsolicited AudioFocusNotification: the head unit took the audio (state
++    /// AUDIO_FOCUS_STATE_LOSS 3 for good, LOSS_TRANSIENT 5 for a while, LOSS_TRANSIENT_CAN_DUCK
++    /// 4) or gave it back (GAIN 1). The phone pauses or resumes its media itself.
++    pub fn send_audio_focus(&mut self, state: i32) -> Vec<Out> {
++        let mut out = Vec::new();
++        if self.state != State::Running {
++            return out;
++        }
++        self.send_to(
++            &mut out,
++            ch::CONTROL,
++            frame_flags::ENC_SIGNAL,
++            ctrl_msg::AUDIO_FOCUS_NOTIFICATION,
++            encode(&AudioFocusNotification {
++                focus_state: state,
++                unsolicited: Some(true),
++            }),
++        );
++        println!("[Session] AudioFocusNotification state={state} (unsolicited) sent");
++        out
++    }
++
+     pub fn request_video_focus(&mut self) -> Vec<Out> {
+         let mut out = Vec::new();
+         if self.state != State::Running {
+@@ -1186,7 +1303,9 @@ impl Session {
+ 
+     pub fn request_main_keyframe(&mut self) -> Vec<Out> {
+         let mut out = Vec::new();
+-        if self.state != State::Running {
++        // While the car shows its own screen the phone sends no video; it starts with a
++        // keyframe when the focus comes back.
++        if self.state != State::Running || self.main_native {
+             return out;
+         }
+         self.send_to(
+@@ -1222,6 +1341,35 @@ impl Session {
+         out
+     }
+ 
++    /// Tell the phone whether its main video is on the car's screen: NATIVE while the car shows
++    /// its own screen (the phone stops encoding, as with any head unit's native UI), PROJECTED
++    /// when it is back (the phone starts again with a keyframe). Only for a running session:
++    /// every session starts PROJECTED, since its first frames are what bring the screen up.
++    pub fn set_main_projected(&mut self, projected: bool) -> Vec<Out> {
++        let mut out = Vec::new();
++        if self.state != State::Running || self.main_native != projected {
++            return out;
++        }
++        self.main_native = !projected;
++        let mode = if projected {
++            VideoFocusMode::Projected
++        } else {
++            VideoFocusMode::Native
++        };
++        self.send_to(
++            &mut out,
++            ch::VIDEO,
++            frame_flags::ENC_SIGNAL,
++            media_msg::VIDEO_FOCUS_NOTIFICATION,
++            focus(mode),
++        );
++        println!(
++            "[Session] main video focus {} sent",
++            if projected { "PROJECTED" } else { "NATIVE" }
++        );
++        out
++    }
++
+     pub fn set_cluster_stream_active(&mut self, active: bool) -> Vec<Out> {
+         let mut out = Vec::new();
+         if self.cluster_stream_wanted == active {
+@@ -1312,6 +1460,28 @@ impl Session {
+     }
+ }
+ 
++impl Session {
++    /// The phone's own ping timestamps, the first three of each session: whether they are its
++    /// wall clock (nanoseconds since 1970, about 1.79e18 in 2026) or a monotonic clock decides
++    /// whether the phone can set the car's clock. The unit's clock is
++    /// printed beside it for comparison.
++    fn log_phone_ping(&mut self, timestamp_ns: i64) {
++        if self.phone_pings_logged >= 3 {
++            return;
++        }
++        self.phone_pings_logged += 1;
++        let unit_ns = std::time::SystemTime::now()
++            .duration_since(std::time::UNIX_EPOCH)
++            .map(|d| d.as_nanos() as i128)
++            .unwrap_or(0);
++        println!(
++            "[Session] phone ping {}: timestamp_ns {timestamp_ns} (unit clock {unit_ns} ns since 1970; difference {} s)",
++            self.phone_pings_logged,
++            (timestamp_ns as i128 - unit_ns) / 1_000_000_000
++        );
++    }
++}
++
+ #[cfg(test)]
+ pub(crate) mod tests {
+     use prost::Message;
+@@ -1594,6 +1764,90 @@ pub(crate) mod tests {
+         );
+     }
+ 
++    #[test]
++    fn last_mode_refuses_the_autoplay_once() {
++        let answer = |state: u8| {
++            Frame::new(
++                ch::CONTROL,
++                frame_flags::ENC_SIGNAL,
++                ctrl_msg::AUDIO_FOCUS_NOTIFICATION,
++                [0x08, state],
++            )
++        };
++        let gain = [0x08, 0x01];
++        let ask = |s: &mut Session, req: &[u8]| frames(&s.on_message(ch::CONTROL, ctrl_msg::AUDIO_FOCUS_REQUEST, req));
++        let last_mode = AaConfig {
++            refuse_autoplay: true,
++            ..Default::default()
++        };
++
++        // The autoplay: LOSS once; a prompt's transient focus is never refused; then GAIN.
++        let (mut s, _tx) = running(last_mode.clone());
++        assert_eq!(ask(&mut s, &[0x08, 0x03]), [answer(2)]);
++        assert_eq!(ask(&mut s, &gain), [answer(3)]);
++        assert_eq!(ask(&mut s, &gain), [answer(1)]);
++
++        // A touch first: the user's own play is granted.
++        let (mut s, _tx) = running(last_mode.clone());
++        s.user_input();
++        assert_eq!(ask(&mut s, &gain), [answer(1)]);
++
++        // No autoplay within the window: granted after it.
++        let (mut s, _tx) = running(last_mode);
++        assert!(s.on_timer(Timer::AutoplayWindow).is_empty());
++        assert_eq!(ask(&mut s, &gain), [answer(1)]);
++
++        // Without last mode: granted at once.
++        let (mut s, _tx) = running(AaConfig::default());
++        assert_eq!(ask(&mut s, &gain), [answer(1)]);
++    }
++
++    // The session reopened its feed after the host restarted: the keyframe trick, so the new
++    // decoder gets an IDR; nothing while the car shows its own screen (no video is sent then).
++    #[test]
++    fn a_reopened_feed_asks_for_a_keyframe() {
++        let reopened = serde_json::json!({ "type": "feed-reopened" });
++        let native = Frame::new(
++            ch::VIDEO,
++            frame_flags::ENC_SIGNAL,
++            media_msg::VIDEO_FOCUS_NOTIFICATION,
++            focus(VideoFocusMode::Native),
++        );
++        let (mut s, _tx) = session(AaConfig::default());
++        assert!(s.on_link_control(&reopened).is_empty());
++        let (mut s, _tx) = running(AaConfig::default());
++        assert_eq!(frames(&s.on_link_control(&reopened)), [native]);
++        let _ = s.set_main_projected(false);
++        assert!(frames(&s.on_link_control(&reopened)).is_empty());
++    }
++
++    #[test]
++    fn main_video_focus_follows_the_car_screen() {
++        let notify = |mode| {
++            Frame::new(
++                ch::VIDEO,
++                frame_flags::ENC_SIGNAL,
++                media_msg::VIDEO_FOCUS_NOTIFICATION,
++                focus(mode),
++            )
++        };
++        // Not before the session runs: its first frames are what bring the screen up.
++        let (mut s, _tx) = session(AaConfig::default());
++        assert!(s.set_main_projected(false).is_empty());
++
++        let (mut s, _tx) = running(AaConfig::default());
++        assert!(s.set_main_projected(true).is_empty());
++        assert_eq!(frames(&s.set_main_projected(false)), [notify(VideoFocusMode::Native)]);
++        assert!(s.set_main_projected(false).is_empty());
++        // Hidden: the keyframe trick must not put the phone back on screen.
++        assert!(s.request_main_keyframe().is_empty());
++        assert!(frames(&s.on_timer(Timer::MainKeyframe)).is_empty());
++        assert_eq!(frames(&s.set_main_projected(true)), [notify(VideoFocusMode::Projected)]);
++        assert!(s.set_main_projected(true).is_empty());
++        assert_eq!(frames(&s.request_main_keyframe()), [notify(VideoFocusMode::Native)]);
++        assert_eq!(frames(&s.on_timer(Timer::MainKeyframe)), [notify(VideoFocusMode::Projected)]);
++    }
++
+     #[test]
+     fn calls_and_unreadable_setups() {
+         let (mut s, _tx) = running(AaConfig::default());
+diff --git a/native/crates/livi-aa-stack/src/ts_vectors.rs b/native/crates/livi-aa-stack/src/ts_vectors.rs
+index 12785fb..45eb5a6 100644
+--- a/native/crates/livi-aa-stack/src/ts_vectors.rs
++++ b/native/crates/livi-aa-stack/src/ts_vectors.rs
+@@ -106,6 +106,8 @@ fn ts_config(v: &Json) -> AaConfig {
+     AaConfig {
+         summary: String::new(),
+         hu_name: s("huName"),
++        hu_make: s("huMake"),
++        hu_model: s("huModel"),
+         video_width: opt_u(v, "videoWidth"),
+         video_height: opt_u(v, "videoHeight"),
+         video_dpi: opt_u(v, "videoDpi"),
+@@ -117,6 +119,9 @@ fn ts_config(v: &Json) -> AaConfig {
+         main_safe_area: insets("mainSafeArea"),
+         driver_position: n("driverPosition") as u8,
+         bt_mac_address: s("btMacAddress"),
++        bt_mac_adapters_only: false,
++        bt_pairing_by_host: false,
++        bt_pairing_methods: Vec::new(),
+         wifi_bssid: s("wifiBssid"),
+         wifi_ssid: s("wifiSsid").unwrap_or_default(),
+         wifi_password: s("wifiPassword").unwrap_or_default(),
+@@ -124,10 +129,13 @@ fn ts_config(v: &Json) -> AaConfig {
+         wifi_channel: opt_u(v, "wifiChannel"),
+         fuel_types: list("fuelTypes"),
+         ev_connector_types: list("evConnectorTypes"),
++        sensor_types: Vec::new(),
++        refuse_autoplay: false,
+         hevc_supported: b("hevcSupported"),
+         vp9_supported: b("vp9Supported"),
+         av1_supported: b("av1Supported"),
+         initial_night_mode: v.get("initialNightMode").and_then(Json::as_bool),
++        initial_driving_status: None,
+         cluster_enabled: b("clusterEnabled"),
+         cluster_width: n("clusterWidth"),
+         cluster_height: n("clusterHeight"),
+@@ -255,7 +263,7 @@ fn control_event_json(e: &ControlEvent) -> Json {
+ fn control_channel_matches() {
+     for case in vectors()["control"].as_array().unwrap() {
+         let msg_id = case["msgId"].as_u64().unwrap() as u16;
+-        let mut c = ControlChannel;
++        let mut c = ControlChannel::default();
+         let out = c.handle_message(msg_id, &unhex(case["payload"].as_str().unwrap()));
+         let mut sent = Vec::new();
+         let mut events = Vec::new();
+@@ -713,6 +721,9 @@ fn session_event_json(e: &SessionEvent) -> Option<Json> {
+         SessionEvent::VoiceSession(a) => json!(["voice-session", a]),
+         SessionEvent::AudioFocus(t) => json!(["audio-focus", t]),
+         SessionEvent::HostUiRequested => json!(["host-ui-requested"]),
++        SessionEvent::BtPairingRequest { address, method } => {
++            json!(["bt-pairing-request", address, method])
++        }
+         SessionEvent::DeviceInfo {
+             name,
+             model,
+@@ -1018,6 +1029,7 @@ fn report_json(r: &Report) -> Vec<Json> {
+         } => vec![command(501)],
+         Report::VideoFocus { cluster: true, .. } => vec![command(506)],
+         Report::HostUiRequested => vec![command(3)],
++        Report::BtPairingRequest { .. } => vec![],
+         Report::Audio {
+             stream,
+             sample_rate,
+@@ -1185,6 +1197,8 @@ fn aa_config_json(c: &AaConfig) -> Json {
+         o.insert(format!("{prefix}Right"), json!(i.right));
+     };
+     put(&mut o, "huName", c.hu_name.clone());
++    put(&mut o, "huMake", c.hu_make.clone());
++    put(&mut o, "huModel", c.hu_model.clone());
+     put(&mut o, "videoWidth", c.video_width);
+     put(&mut o, "videoHeight", c.video_height);
+     put(&mut o, "videoDpi", c.video_dpi);
+diff --git a/native/crates/livi-aa/src/session.rs b/native/crates/livi-aa/src/session.rs
+index 65f8b9e..6fd654f 100644
+--- a/native/crates/livi-aa/src/session.rs
++++ b/native/crates/livi-aa/src/session.rs
+@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
+ use std::net::IpAddr;
+ use std::os::unix::fs::PermissionsExt;
+ use std::sync::Arc;
+-use std::time::{Duration, SystemTime, UNIX_EPOCH};
++use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+ 
+ use livi_aa_proto::VersionResponseOptions;
+ use livi_host_proto::feed as feedproto;
+@@ -28,6 +28,16 @@ const SETUP_TIMEOUT: Duration = Duration::from_secs(30);
+ const VIDEO_BACKLOG: usize = 240;
+ const AUDIO_BACKLOG: usize = 64;
+ const READ_CHUNK: usize = 65536;
++/// How long a session outlives the phone's end of the link. The main process may close it
++/// first (it gets an "eof" control); if not, the link is dead: over USB the phone left
++/// accessory mode (Android Auto stopped from the phone's menu) and can come straight back
++/// under the same serial, so no unplug cancels the old session. Left open it held the video
++/// feed, and the next session waited behind it (step 3 on the unit, run 12).
++const PHONE_EOF_GRACE: Duration = Duration::from_secs(3);
++/// A feed the host closed is reopened after this long; one it never took, after twice the
++/// last wait, up to FEED_REOPEN_MAX (Sinks::revive).
++const FEED_REOPEN: Duration = Duration::from_secs(1);
++const FEED_REOPEN_MAX: Duration = Duration::from_secs(60);
+ 
+ struct SocketPath(String);
+ 
+@@ -69,12 +79,32 @@ fn ping_config(options: &[u8]) -> Option<PingConfig> {
+     })
+ }
+ 
+-#[derive(Default)]
+ struct Sinks {
+     feed: Option<(String, FeedWriter)>,
+     video: HashMap<u8, (u32, u8)>,
+     audio: HashMap<u8, u32>,
+     backlog: HashMap<u8, VecDeque<(u64, Vec<u8>)>>,
++    /// When the feed was last opened, and how long until a closed one is opened again (see
++    /// revive).
++    opened_at: Option<Instant>,
++    reopen_after: Duration,
++    /// The feed was reopened in mid-session: once it is connected, the main video needs a
++    /// keyframe, as the new host's decoder cannot start on the frames that follow.
++    keyframe_due: bool,
++}
++
++impl Default for Sinks {
++    fn default() -> Self {
++        Self {
++            feed: None,
++            video: HashMap::new(),
++            audio: HashMap::new(),
++            backlog: HashMap::new(),
++            opened_at: None,
++            reopen_after: FEED_REOPEN,
++            keyframe_due: false,
++        }
++    }
+ }
+ 
+ impl Sinks {
+@@ -86,24 +116,7 @@ impl Sinks {
+                 .as_ref()
+                 .is_none_or(|(p, writer)| p != path || writer.closed())
+         {
+-            self.feed = Some((path.to_owned(), FeedWriter::open(path.to_owned())));
+-            let known: Vec<(u8, u32, u8)> = self
+-                .video
+-                .iter()
+-                .map(|(ch, (id, codec))| (*ch, *id, *codec))
+-                .collect();
+-            for (_, id, codec) in known {
+-                self.send(feedproto::encode(
+-                    feedproto::KIND_VIDEO_START,
+-                    id,
+-                    0,
+-                    &[codec],
+-                ));
+-            }
+-            let waiting: Vec<u8> = self.backlog.keys().copied().collect();
+-            for ch in waiting {
+-                self.flush(ch);
+-            }
++            self.open(path.to_owned());
+         }
+         for entry in v
+             .get("video")
+@@ -148,7 +161,69 @@ impl Sinks {
+         }
+     }
+ 
++    /// (Re)open the feed to the host. Known video streams are announced again (the host may
++    /// be a new process) and what waited is flushed.
++    fn open(&mut self, path: String) {
++        let reopened = self.feed.is_some();
++        self.feed = Some((path.clone(), FeedWriter::open(path)));
++        self.opened_at = Some(Instant::now());
++        self.keyframe_due |= reopened;
++        let known: Vec<(u8, u32, u8)> = self
++            .video
++            .iter()
++            .map(|(ch, (id, codec))| (*ch, *id, *codec))
++            .collect();
++        for (_, id, codec) in known {
++            self.send(feedproto::encode(
++                feedproto::KIND_VIDEO_START,
++                id,
++                0,
++                &[codec],
++            ));
++        }
++        let waiting: Vec<u8> = self.backlog.keys().copied().collect();
++        for ch in waiting {
++            self.flush(ch);
++        }
++    }
++
++    /// The host closed the feed (it restarted: the bridge under procguard) or never took it:
++    /// open it again while media flows, else the session would stay without picture and
++    /// sound to its end. One second after a feed that worked; doubling up to FEED_REOPEN_MAX
++    /// while the host stays away, so a host that is down for good costs a line a minute.
++    fn revive(&mut self) {
++        let Some((path, writer)) = &self.feed else {
++            return;
++        };
++        if !writer.closed() || self.opened_at.is_some_and(|t| t.elapsed() < self.reopen_after) {
++            return;
++        }
++        let worked = writer.has_connected();
++        let path = path.clone();
++        self.reopen_after = if worked {
++            FEED_REOPEN
++        } else {
++            (self.reopen_after * 2).clamp(FEED_REOPEN, FEED_REOPEN_MAX)
++        };
++        println!(
++            "[aa-feed] {path} {}: reopening it",
++            if worked { "closed by the host" } else { "not reached" }
++        );
++        self.open(path);
++    }
++
++    /// The reopened feed is connected and the main video needs a keyframe: true once.
++    fn keyframe_wanted(&mut self) -> bool {
++        let connected = self.feed.as_ref().is_some_and(|(_, w)| w.has_connected());
++        if self.keyframe_due && connected {
++            self.keyframe_due = false;
++            return true;
++        }
++        false
++    }
++
+     fn push(&mut self, ch: u8, ts: u64, data: &[u8]) {
++        self.revive();
+         if self.feed.is_some()
+             && let Some((kind, id)) = self.target(ch)
+         {
+@@ -314,12 +389,15 @@ where
+     let mut phone_open = true;
+     let setup_deadline = tokio::time::sleep(SETUP_TIMEOUT);
+     tokio::pin!(setup_deadline);
++    let eof_deadline = tokio::time::sleep(Duration::MAX);
++    tokio::pin!(eof_deadline);
+     loop {
+         let setting_up = s.phase != Phase::Running;
+         tokio::select! {
+             r = rd.read(&mut buf), if phone_open => match r {
+                 Ok(0) => {
+                     phone_open = false;
++                    eof_deadline.as_mut().reset(tokio::time::Instant::now() + PHONE_EOF_GRACE);
+                     if !s.control("{\"type\":\"eof\"}").await {
+                         break;
+                     }
+@@ -361,6 +439,10 @@ where
+                 s.closed("setup timeout").await;
+                 break;
+             }
++            _ = &mut eof_deadline, if !phone_open => {
++                s.closed("phone closed the link").await;
++                break;
++            }
+             _ = cancel.notified() => {
+                 s.closed("phone unplugged").await;
+                 break;
+@@ -595,6 +677,15 @@ impl<W: AsyncWrite + Unpin + Send> Session<W> {
+             self.audio_frames += 1;
+         }
+         self.sinks.push(m.ch, ts, data);
++        if self.sinks.keyframe_wanted() {
++            println!(
++                "[aa-feed] {}: the feed is back, asking the phone for a keyframe",
++                self.peer.label
++            );
++            if !self.control("{\"type\":\"feed-reopened\"}").await {
++                return Err("main process gone".into());
++            }
++        }
+ 
+         if self.announced.insert(m.ch) {
+             let json = serde_json::json!({ "type": "first-frame", "ch": m.ch }).to_string();
+@@ -711,6 +802,145 @@ fn now_ns() -> u64 {
+ mod tests {
+     use super::*;
+ 
++    async fn records(host: &mut UnixStream, n: usize) -> Vec<feedproto::Record> {
++        let mut framer = feedproto::Framer::new();
++        let mut got = Vec::new();
++        let mut buf = [0u8; 4096];
++        while got.len() < n {
++            let k = tokio::time::timeout(Duration::from_secs(5), host.read(&mut buf))
++                .await
++                .expect("feed records")
++                .unwrap();
++            assert!(k > 0, "the feed closed");
++            framer.push(&buf[..k]);
++            while let Some(r) = framer.next_record() {
++                got.push(r);
++            }
++        }
++        got
++    }
++
++    // The host (the bridge) restarts in mid-session: at the next frame the feed is opened
++    // again, the video stream announced to the new host, the frame delivered, and, once the
++    // feed is connected, a keyframe asked for (once).
++    #[tokio::test]
++    async fn a_feed_the_host_closed_is_reopened() {
++        let path = std::env::temp_dir()
++            .join(format!("livi-revive-{}.sock", std::process::id()))
++            .display()
++            .to_string();
++        let _ = std::fs::remove_file(&path);
++        let listener = UnixListener::bind(&path).unwrap();
++        let mut sinks = Sinks {
++            reopen_after: Duration::ZERO,
++            ..Default::default()
++        };
++        sinks.apply(&serde_json::json!({
++            "type": "sink",
++            "feed": path,
++            "video": [{ "ch": ch::VIDEO, "id": 1, "codec": "h264" }],
++        }));
++        let (mut host, _) = tokio::time::timeout(Duration::from_secs(5), listener.accept())
++            .await
++            .unwrap()
++            .unwrap();
++        assert_eq!(records(&mut host, 1).await[0].kind, feedproto::KIND_VIDEO_START);
++        assert!(!sinks.keyframe_wanted(), "the first feed needs no keyframe");
++
++        drop(host);
++        drop(listener);
++        let _ = std::fs::remove_file(&path);
++        tokio::time::timeout(Duration::from_secs(2), async {
++            while !sinks.feed.as_ref().unwrap().1.closed() {
++                tokio::time::sleep(Duration::from_millis(10)).await;
++            }
++        })
++        .await
++        .expect("the writer saw the host go");
++        let listener = UnixListener::bind(&path).unwrap();
++        sinks.push(ch::VIDEO, 7, b"frame");
++        let (mut host, _) = tokio::time::timeout(Duration::from_secs(5), listener.accept())
++            .await
++            .expect("the feed was reopened")
++            .unwrap();
++        let got = records(&mut host, 2).await;
++        assert_eq!((got[0].kind, got[0].id), (feedproto::KIND_VIDEO_START, 1));
++        assert_eq!(
++            (got[1].kind, got[1].ts, got[1].payload.as_slice()),
++            (feedproto::KIND_VIDEO, 7, &b"frame"[..])
++        );
++        assert!(sinks.keyframe_wanted());
++        assert!(!sinks.keyframe_wanted(), "asked once");
++        let _ = std::fs::remove_file(&path);
++    }
++
++    // A closed feed is not reopened frame after frame: only once reopen_after has passed.
++    #[tokio::test]
++    async fn a_closed_feed_is_reopened_at_most_every_reopen_after() {
++        let path = std::env::temp_dir()
++            .join(format!("livi-revive-rate-{}.sock", std::process::id()))
++            .display()
++            .to_string();
++        let _ = std::fs::remove_file(&path);
++        let listener = UnixListener::bind(&path).unwrap();
++        let mut sinks = Sinks::default();
++        sinks.apply(&serde_json::json!({ "type": "sink", "feed": path }));
++        let (host, _) = tokio::time::timeout(Duration::from_secs(5), listener.accept())
++            .await
++            .unwrap()
++            .unwrap();
++        drop(host);
++        tokio::time::timeout(Duration::from_secs(2), async {
++            while !sinks.feed.as_ref().unwrap().1.closed() {
++                tokio::time::sleep(Duration::from_millis(10)).await;
++            }
++        })
++        .await
++        .unwrap();
++        let opened = sinks.opened_at.unwrap();
++        sinks.push(ch::VIDEO, 1, b"x");
++        assert_eq!(sinks.opened_at, Some(opened), "within a second of the last open: left closed");
++        sinks.opened_at = opened.checked_sub(FEED_REOPEN * 2);
++        sinks.push(ch::VIDEO, 2, b"x");
++        assert!(sinks.opened_at.unwrap() > opened, "reopened at the next frame");
++        assert!(!sinks.feed.as_ref().unwrap().1.closed());
++        let _ = std::fs::remove_file(&path);
++    }
++
++    // The phone takes the version request, then its end of the link closes; the main process
++    // never closes the session. It must end on its own after the grace, telling the main
++    // process why, instead of holding on (and holding the video feed) forever.
++    #[tokio::test]
++    async fn a_closed_phone_link_ends_the_session_after_the_grace() {
++        let path = std::env::temp_dir()
++            .join(format!("livi-eof-{}.sock", std::process::id()))
++            .to_string_lossy()
++            .into_owned();
++        let _ = std::fs::remove_file(&path);
++        let node = UnixListener::bind(&path).unwrap();
++        let (mut phone, ours) = tokio::io::duplex(1 << 16);
++        let peer = Peer {
++            label: "test".into(),
++            ip: IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
++        };
++        let session = tokio::spawn(run(ours, peer, node, path.clone(), Arc::new(Notify::new())));
++        let mut main = UnixStream::connect(&path).await.unwrap();
++        let mut version = [0u8; 64];
++        assert!(phone.read(&mut version).await.unwrap() > 0);
++        drop(phone);
++
++        let end = tokio::time::timeout(Duration::from_secs(10), session)
++            .await
++            .expect("the session ended")
++            .unwrap();
++        assert!(!end.running);
++        let mut got = Vec::new();
++        let _ = tokio::time::timeout(Duration::from_secs(1), main.read_to_end(&mut got)).await;
++        let text = String::from_utf8_lossy(&got);
++        assert!(text.contains("\"eof\""), "{text}");
++        assert!(text.contains("phone closed the link"), "{text}");
++    }
++
+     #[test]
+     fn the_phone_ping_wishes_come_out_of_the_version_response() {
+         let ping = [
+diff --git a/native/crates/livi-aa/src/usb.rs b/native/crates/livi-aa/src/usb.rs
+index 4e9fc0f..c7c0914 100644
+--- a/native/crates/livi-aa/src/usb.rs
++++ b/native/crates/livi-aa/src/usb.rs
+@@ -67,16 +67,79 @@ struct Phones {
+     resetting: HashMap<String, Instant>,
+     cancel: HashMap<DeviceId, Arc<Notify>>,
+     leftover: HashSet<String>,
++    serial_filter: Option<String>,
++    // Gated mode: phones are neither switched nor served until something arms the watcher
++    // (another component decides when a session may start), and disarming leaves them alone.
++    gated: bool,
++    armed: bool,
++    notes: Option<tokio::sync::mpsc::UnboundedSender<UsbNote>>,
+ }
+ 
+ type Shared = Arc<Mutex<Phones>>;
+ 
++/// What the watcher reports to an owner that gates it (see `Control::gated`).
++#[derive(Debug, Clone, PartialEq, Eq)]
++pub enum UsbNote {
++    /// A phone is being switched to accessory mode.
++    Switching { serial: String },
++    /// The accessory-mode switch failed; the phone is left alone until it is replugged.
++    SwitchFailed { serial: String, error: String },
++}
++
+ #[derive(Clone, Default)]
+-pub struct Control(Shared);
++pub struct Control {
++    phones: Shared,
++    rescan: Arc<Notify>,
++}
+ 
+ impl Control {
++    /// Only switch and serve phones whose USB serial contains `filter`. The check runs before
++    /// the AOAP switch, so other phones are never pushed into accessory mode.
++    pub fn with_serial_filter(filter: &str) -> Self {
++        let control = Self::default();
++        control.phones.lock().unwrap().serial_filter = Some(filter.to_owned());
++        control
++    }
++
++    /// Switch and serve phones only while armed (`arm(true)`), starting disarmed. `notes`
++    /// receives the switch attempts and failures.
++    pub fn gated(self, notes: tokio::sync::mpsc::UnboundedSender<UsbNote>) -> Self {
++        {
++            let mut p = self.phones.lock().unwrap();
++            p.gated = true;
++            p.armed = false;
++            p.notes = Some(notes);
++        }
++        self
++    }
++
++    /// Arm or disarm a gated watcher. Arming looks at the phones already attached again, so a
++    /// phone plugged in before `arm(true)` is switched now. Disarming does not end running
++    /// sessions (see `restart`); it only stops new switches. Arming is the host asking for a
++    /// session, so it also releases phones parked because this side closed their last one (a
++    /// `stop`, the host going away); else such a phone came back only after a replug.
++    pub fn arm(&self, on: bool) {
++        let (was, unparked) = {
++            let mut p = self.phones.lock().unwrap();
++            let unparked = on && !p.parked.is_empty();
++            if on {
++                p.parked.clear();
++            }
++            (std::mem::replace(&mut p.armed, on), unparked)
++        };
++        if on && (!was || unparked) {
++            self.rescan.notify_one();
++        }
++    }
++
++    /// Whether a session may be brought up now: armed, or not gated at all.
++    pub fn armed(&self) -> bool {
++        let p = self.phones.lock().unwrap();
++        !p.gated || p.armed
++    }
++
+     pub fn restart(&self, serial: &str) -> usize {
+-        let p = self.0.lock().unwrap();
++        let p = self.phones.lock().unwrap();
+         let mut n = 0;
+         for (id, cancel) in &p.cancel {
+             let matches = serial.is_empty() || p.serial_of.get(id).is_some_and(|s| s == serial);
+@@ -99,7 +162,8 @@ pub async fn run(
+         dir: sessions,
+         announce: Box::new(on_session),
+     });
+-    let phones: Shared = control.0;
++    let phones: Shared = control.phones;
++    let rescan = control.rescan;
+     let (ready_tx, ready) = watch::channel(false);
+     tokio::spawn(async move {
+         subscribed.await;
+@@ -123,10 +187,22 @@ pub async fn run(
+         Err(e) => eprintln!("[aa-usb] list devices: {e}"),
+     }
+     println!("[aa-usb] watching for phones");
+-    while let Some(ev) = watch.next().await {
+-        match ev {
+-            HotplugEvent::Connected(info) => seen(&phones, &sessions, &ready, info, false),
+-            HotplugEvent::Disconnected(id) => gone(&phones, id),
++    loop {
++        tokio::select! {
++            ev = watch.next() => match ev {
++                Some(HotplugEvent::Connected(info)) => seen(&phones, &sessions, &ready, info, false),
++                Some(HotplugEvent::Disconnected(id)) => gone(&phones, id),
++                None => break,
++            },
++            // A gated watcher was armed: look at the phones that are already attached.
++            () = rescan.notified() => match nusb::list_devices().await {
++                Ok(list) => {
++                    for info in list {
++                        seen(&phones, &sessions, &ready, info, false);
++                    }
++                }
++                Err(e) => eprintln!("[aa-usb] list devices: {e}"),
++            },
+         }
+     }
+     eprintln!("[aa-usb] hotplug watch ended");
+@@ -175,11 +251,34 @@ fn seen(
+     if !accessory && !candidate {
+         return;
+     }
+-    {
++    let reset_only = {
+         let mut p = phones.lock().unwrap();
+         if p.busy.contains(&id) || p.failed.contains(&id) {
+             return;
+         }
++        // An accessory found at startup was left by an earlier run (a crash or a restart in
++        // mid-session): its phone's Android Auto still talks to a host that is gone. It is
++        // reset (release_leftover) whatever the gate says, so the phone comes back as itself
++        // and the owner's next arm finds it the usual way. Disarmed, it is not served.
++        let disarmed = p.gated && !p.armed;
++        let reset_only = disarmed && accessory && at_startup;
++        if disarmed && !reset_only {
++            println!(
++                "[aa-usb] {}: {} not armed yet, leaving it alone",
++                label(&serial),
++                if accessory { "accessory" } else { "phone" }
++            );
++            return;
++        }
++        if let Some(filter) = &p.serial_filter
++            && !serial.contains(filter.as_str())
++        {
++            println!(
++                "[aa-usb] {}: serial does not match filter {filter:?}, leaving it alone",
++                label(&serial)
++            );
++            return;
++        }
+         if !serial.is_empty() {
+             p.serial_of.insert(id, serial.clone());
+         }
+@@ -196,7 +295,8 @@ fn seen(
+             return;
+         }
+         p.busy.insert(id);
+-    }
++        reset_only
++    };
+     let phones = phones.clone();
+     if accessory {
+         let sessions = sessions.clone();
+@@ -204,7 +304,8 @@ fn seen(
+         let cancel = Arc::new(Notify::new());
+         phones.lock().unwrap().cancel.insert(id, cancel.clone());
+         tokio::spawn(async move {
+-            if !(at_startup && release_leftover(&phones, &info, &serial).await) {
++            let released = at_startup && release_leftover(&phones, &info, &serial).await;
++            if !released && !reset_only {
+                 let unplugged = tokio::select! {
+                     _ = async { let _ = ready.wait_for(|r| *r).await; } => false,
+                     _ = cancel.notified() => true,
+@@ -225,11 +326,13 @@ fn seen(
+                 info.vendor_id(),
+                 info.product_id()
+             );
++            note(&phones, UsbNote::Switching { serial: serial.clone() });
+             match switch(&info).await {
+                 Ok(()) => println!("[aa-usb] {l}: accessory mode requested"),
+                 Err(e) => {
+                     eprintln!("[aa-usb] {l}: aoap: {e}");
+                     phones.lock().unwrap().failed.insert(id);
++                    note(&phones, UsbNote::SwitchFailed { serial: serial.clone(), error: e });
+                 }
+             }
+             phones.lock().unwrap().busy.remove(&id);
+@@ -237,6 +340,12 @@ fn seen(
+     }
+ }
+ 
++fn note(phones: &Shared, n: UsbNote) {
++    if let Some(tx) = &phones.lock().unwrap().notes {
++        let _ = tx.send(n);
++    }
++}
++
+ fn gone(phones: &Shared, id: DeviceId) {
+     let mut p = phones.lock().unwrap();
+     if let Some(c) = p.cancel.get(&id) {
+diff --git a/native/crates/livi-session-io/src/feed.rs b/native/crates/livi-session-io/src/feed.rs
+index 3a03d06..b3437c3 100644
+--- a/native/crates/livi-session-io/src/feed.rs
++++ b/native/crates/livi-session-io/src/feed.rs
+@@ -2,27 +2,50 @@
+ // SPDX-License-Identifier: GPL-3.0-or-later
+ // Additional terms: see NOTICE
+ 
++use std::sync::Arc;
++use std::sync::atomic::{AtomicBool, Ordering};
++use std::time::Duration;
++
+ use tokio::io::{AsyncReadExt, AsyncWriteExt};
+ use tokio::net::UnixStream;
+ use tokio::sync::mpsc;
+ 
+ const QUEUE: usize = 512;
++const CONNECT_ATTEMPTS: u32 = 40;
++const CONNECT_RETRY: Duration = Duration::from_millis(250);
+ 
+ pub struct FeedWriter {
+     tx: mpsc::Sender<Vec<u8>>,
++    /// The connection to the host was made (it may have closed since).
++    connected: Arc<AtomicBool>,
+ }
+ 
+ impl FeedWriter {
+     pub fn open(path: String) -> Self {
+         let (tx, mut rx) = mpsc::channel::<Vec<u8>>(QUEUE);
++        let connected = Arc::new(AtomicBool::new(false));
++        let up = connected.clone();
+         tokio::spawn(async move {
+-            let sock = match UnixStream::connect(&path).await {
+-                Ok(s) => s,
+-                Err(e) => {
+-                    eprintln!("[aa-feed] connect {path}: {e}");
+-                    return;
++            // The host may still be starting (or restarting) when the session configures its
++            // sink; keep trying for a while instead of losing the feed for the whole session.
++            let mut attempt = 0;
++            let sock = loop {
++                match UnixStream::connect(&path).await {
++                    Ok(s) => break s,
++                    Err(e) if attempt < CONNECT_ATTEMPTS => {
++                        if attempt == 0 {
++                            eprintln!("[aa-feed] connect {path}: {e}, retrying");
++                        }
++                        attempt += 1;
++                        tokio::time::sleep(CONNECT_RETRY).await;
++                    }
++                    Err(e) => {
++                        eprintln!("[aa-feed] connect {path}: {e}");
++                        return;
++                    }
+                 }
+             };
++            up.store(true, Ordering::Relaxed);
+             let (mut rd, mut wr) = sock.into_split();
+             let mut probe = [0u8; 1];
+             loop {
+@@ -41,16 +64,23 @@ impl FeedWriter {
+                 }
+             }
+         });
+-        Self { tx }
++        Self { tx, connected }
+     }
+ 
+     pub fn send(&self, record: Vec<u8>) -> bool {
+         self.tx.try_send(record).is_ok()
+     }
+ 
++    /// The writer is done: the host closed the feed, a write failed, or it never connected.
+     pub fn closed(&self) -> bool {
+         self.tx.is_closed()
+     }
++
++    /// The writer reached the host (records queued before were delivered first). Stays true
++    /// after the connection closed.
++    pub fn has_connected(&self) -> bool {
++        self.connected.load(Ordering::Relaxed)
++    }
+ }
+ 
+ #[cfg(test)]
+@@ -80,6 +110,28 @@ mod tests {
+         })
+         .await
+         .unwrap();
++        assert!(writer.has_connected(), "it did reach the host before");
++        let _ = std::fs::remove_file(&path);
++    }
++
++    #[tokio::test]
++    async fn the_writer_waits_for_a_late_host() {
++        let path =
++            std::env::temp_dir().join(format!("livi-feed-late-{}.sock", std::process::id()));
++        let _ = std::fs::remove_file(&path);
++        let writer = FeedWriter::open(path.display().to_string());
++        assert!(writer.send(b"rec".to_vec()));
++        tokio::time::sleep(Duration::from_millis(600)).await;
++        assert!(!writer.has_connected() && !writer.closed());
++        let listener = UnixListener::bind(&path).unwrap();
++        let (mut host, _) = tokio::time::timeout(Duration::from_secs(5), listener.accept())
++            .await
++            .unwrap()
++            .unwrap();
++        let mut got = [0u8; 3];
++        host.read_exact(&mut got).await.unwrap();
++        assert_eq!(&got, b"rec");
++        assert!(writer.has_connected());
+         let _ = std::fs::remove_file(&path);
+     }
+ }

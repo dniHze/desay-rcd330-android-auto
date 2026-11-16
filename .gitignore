@@ -1,0 +1,29 @@
+# Made locally, never committed: your stock images, the toolchain and sysroot, downloads,
+# caches and build outputs.
+/firmware/
+/.scratch/
+/out/
+/xcache*/
+*.armhf
+*.armhf.version
+target/
+__pycache__/
+
+# Build outputs in the source folders.
+/aa-carlife-shim/out/
+/aa-bridge/aa-bridge
+/aa-bridge/feed_sender
+/aa-bridge/feedproto_test
+/ctng/tarballs/
+/kzb-re/samples/
+/kzb-re/*.kzb
+/kzb-re/*.so
+
+# A unit's logs (aa-logs) hold its phone's and car's identifiers.
+aa-logs/
+
+.DS_Store
+._*
+
+# LIVI's head-unit certificate and key, fetched by r2_musl.sh: never committed.
+/livi/native/crates/livi-aa/src/cert.rs

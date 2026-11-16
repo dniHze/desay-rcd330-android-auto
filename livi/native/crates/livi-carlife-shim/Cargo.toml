@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# The CarLife slot's stand-in (svp.svc.carlife), ported from aa-carlife-shim/src/shim.cpp: serves
+# the stock CarLife RCF contract over rcf-lite and drives the AA receiver over its control socket.
+# A library: the receiver binary runs it as `aa-headless shim <args>`.
+
+[package]
+name = "livi-carlife-shim"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+libc = "0.2"
+rcf-lite.workspace = true

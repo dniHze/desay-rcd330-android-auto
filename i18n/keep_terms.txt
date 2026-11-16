@@ -1,0 +1,58 @@
+# Terms never translated: every translation keeps them as written here (check.py checks it, and
+# the DeepL glossary maps each to itself). One per line; longer terms first wins where they overlap.
+# Found in the English column; confirmed by the user on 2026-11-12. Units are translated (not
+# listed here), and so are multi-word feature names (Park Assist, Front Assist, ...).
+
+# Brands and products
+Android Auto
+Apple CarPlay
+CarPlay
+Apple
+iPhone
+iPod
+iTunes
+Baidu CarLife
+CarLife
+Baidu
+MirrorLink®
+MirrorLink
+App-Connect
+SmartLink
+Bluetooth
+Skoda
+VW
+Climatronic
+QWERTY
+
+# Vehicle feature names of one word, and ParkPilot (the user's rule, 2026-11-13: ParkPilot stays
+# as it is in every language; names of two words and Start-Stop are translated)
+ParkPilot
+E-MODE
+Eco+
+
+# Technologies, media and abbreviations
+USB
+SD
+AUX
+AM
+FM
+BT
+A2DP
+AVRCP
+HFP
+SMS
+PIN
+VIN
+TPMS
+ESC
+ASR
+ACC
+DCC
+DSG
+ECO
+HI
+LO
+12V
+
+# Interface
+OK

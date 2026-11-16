@@ -1,0 +1,4 @@
+#!/bin/sh
+# The CarLife slot of init.sh (svp_start_service -7 carlifeservice): Android Auto's launcher,
+# which runs aa-carlife-shim or, as the fallback, the stock service (carlifeservice.stock).
+exec /bin/sh "${AA_ROOT:-/svp}/etc/aa_run.sh" carlife "$@"

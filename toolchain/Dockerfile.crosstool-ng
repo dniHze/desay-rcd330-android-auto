@@ -1,0 +1,15 @@
+FROM debian:bookworm-slim
+ENV DEBIAN_FRONTEND=noninteractive
+# bullseye ships gcc-10 as host compiler (builds gcc-4.9 far more reliably than gcc-12)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential gcc g++ make autoconf automake bison flex texinfo help2man gawk \
+      libtool libtool-bin libncurses-dev unzip wget curl xz-utils bzip2 gzip \
+      python3 rsync git gperf patch file ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+# crosstool-NG 1.25 supports gcc 4.9 / glibc 2.15
+RUN cd /opt && git clone --depth 1 -b crosstool-ng-1.25.0 https://github.com/crosstool-ng/crosstool-ng.git \
+    && cd crosstool-ng && ./bootstrap && ./configure --prefix=/opt/ctng && make -j"$(nproc)" && make install
+ENV PATH=/opt/ctng/bin:$PATH
+RUN useradd -m build
+WORKDIR /home/build
+CMD ["/bin/bash"]

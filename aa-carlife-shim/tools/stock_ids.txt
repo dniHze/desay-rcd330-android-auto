@@ -1,0 +1,216 @@
+ISVP_AudioService	14	RegisterAudio	sig<int, std::string, unsigned int>
+ISVP_CarLifeListener	0	OnAppStatusChange	sig<RCF::Void, S_CL_APP_STATUS>
+ISVP_CarLifeListener	1	OnCarLifeConnectStatusChange	sig<RCF::Void, S_CL_CONNECT_STATUS, S_CL_CONNECT_ERROR>
+ISVP_CarLifeListener	2	OnConnectingStatusPercentage	sig<RCF::Void, int>
+ISVP_CarLifeListener	3	OnPhoneStatusChange	sig<RCF::Void, S_CL_PHONE_STATUS>
+ISVP_CarLifeListener	4	OnTelephoneStatusChange	sig<RCF::Void, S_CL_TELEPHONE_STATUS>
+ISVP_CarLifeListener	5	OnScreenStatusChange	sig<RCF::Void, S_CL_SCREEN_STATUS>
+ISVP_CarLifeListener	6	OnConnectException	sig<RCF::Void, S_CL_EXCEPTION_TYPE>
+ISVP_CarLifeListener	7	OnGoToDeskTop	sig<RCF::Void>
+ISVP_CarLifeListener	8	OnModuleStatusChange	sig<RCF::Void, unsigned int, unsigned int>
+ISVP_CarLifeListener	9	OnBtCallingAndPauseCarlifeConnect	sig<RCF::Void, int>
+ISVP_CarLifeService	0	Play	sig<int, int>
+ISVP_CarLifeService	1	Pause	sig<int, int>
+ISVP_CarLifeService	2	Show	sig<int, int>
+ISVP_CarLifeService	3	StartApp	sig<int, int>
+ISVP_CarLifeService	4	CarLifeConnection	sig<int>
+ISVP_CarLifeService	5	CarLifeDisConnection	sig<int>
+ISVP_CarLifeService	6	SingleTouchInfo	sig<RCF::Void, unsigned int, unsigned int, S_CL_TOUCH_EVENT>
+ISVP_CarLifeService	7	RotateKeyEvent	sig<RCF::Void, unsigned int, int>
+ISVP_CarLifeService	8	GetCarLifeConnectStatus	sig<S_CL_CONNECT_STATUS>
+ISVP_CarLifeService	9	GoToForeGround	sig<RCF::Void>
+ISVP_CarLifeService	10	NeedBlockBTPopup	sig<int>
+ISVP_CarLifeService	11	NeedSwitchCarLifeAppToFG	sig<int>
+ISVP_CarLifeService	12	GetModuleStatus	sig<unsigned int, unsigned int>
+ISVP_CarLifeService	13	SetSourceAvailable	sig<RCF::Void, int>
+ISVP_CarLifeService	14	SendModuleControlCmd	sig<RCF::Void, unsigned int, unsigned int>
+ISVP_CarLifeService	15	GetConnectCarlifePhoneBtAddress	sig<std::string>
+ISVP_CarLifeService	16	ConnectCarlifePhoneIsiOS	sig<int>
+ISVP_CarLifeService	17	ClearCarLifeStatus	sig<RCF::Void>
+ISVP_CarLifeService	18	NeedChangeHandFreeMode	sig<int>
+SVP_BtListener	0	OnBtOpenStatusChanged	sig<RCF::Void, SVPBtType::BT_STATUS, int>
+SVP_BtListener	1	OnBtResetFinish	sig<RCF::Void>
+SVP_BtListener	2	OnSetVisibleStatusChanged	sig<RCF::Void, int>
+SVP_BtListener	3	OnSetBtNameStatusChanged	sig<RCF::Void, int>
+SVP_BtListener	4	OnECNRAudioPathChanged	sig<RCF::Void, SVPBtType::ECNR_AUDIO_PATH>
+SVP_BtListener	5	OnECNRParamsModeChanged	sig<RCF::Void, SVPBtType::ECNR_PARAMS_MODE>
+SVP_BtListener	6	OnSearchDeviceInd	sig<RCF::Void>
+SVP_BtListener	7	OnBtUartDebugStatusChanged	sig<RCF::Void>
+SVP_BtListener	8	OnSearchDeviceCmp	sig<RCF::Void>
+SVP_BtListener	9	OnSearchDeviceStart	sig<RCF::Void>
+SVP_BtListener	10	OnDeviceNameChanged	sig<RCF::Void, unsigned int>
+SVP_BtListener	11	OnInqureProfileCmp	sig<RCF::Void, int>
+SVP_BtListener	12	OnPairingComfirmRequest	sig<RCF::Void, unsigned int, std::string>
+SVP_BtListener	13	OnPairingPinCodeRequest	sig<RCF::Void, unsigned int, std::string, std::string>
+SVP_BtListener	14	OnRemoteConnectRequest	sig<RCF::Void, std::string>
+SVP_BtListener	15	OnReturnRemoteDeviceName	sig<RCF::Void, std::string, std::string>
+SVP_BtListener	16	OnPairStatusChanged	sig<RCF::Void, SVPBtType::PAIR_STATUS, std::string>
+SVP_BtListener	17	OnDeviceNeedPair	sig<RCF::Void, std::string>
+SVP_BtListener	18	OnSupportProfileChanged	sig<RCF::Void, int, int>
+SVP_BtListener	19	OnPairListChanged	sig<RCF::Void>
+SVP_BtListener	20	OnSearchDeviceStop	sig<RCF::Void>
+SVP_BtListener	21	OnReplaceConnectRequest	sig<RCF::Void>
+SVP_BtListener	22	OnFavoriteChanged	sig<RCF::Void>
+SVP_BtListener	23	OnUserProfileChanged	sig<RCF::Void>
+SVP_BtListener	24	OnAudioProfileEnable	sig<RCF::Void>
+SVP_BtListener	25	OnPhoneReminderEnable	sig<RCF::Void>
+SVP_BtListener	26	OnConnectStatusChanged	sig<RCF::Void, SVPBtType::BT_PROFILE_CONNECT, int, std::string>
+SVP_BtListener	27	OnConnectCmp	sig<RCF::Void>
+SVP_BtListener	28	OnBtConnnectDisableStatusChanged	sig<RCF::Void, unsigned char>
+SVP_BtListener	29	OnDisconnectStatusChanged	sig<RCF::Void, SVPBtType::BT_PROFILE_CONNECT, int>
+SVP_BtListener	30	OnDisconnectCmp	sig<RCF::Void>
+SVP_BtListener	31	OnRemoteSignalChanged	sig<RCF::Void>
+SVP_BtListener	32	OnRemoteRoamingChanged	sig<RCF::Void>
+SVP_BtListener	33	OnRemoteBatteryChanged	sig<RCF::Void>
+SVP_BtListener	34	OnAudioPathChanged	sig<RCF::Void, SVPBtType::AUDIO_PATH_STATUS>
+SVP_BtListener	35	OnServiceStatusChanged	sig<RCF::Void>
+SVP_BtListener	36	OnServiceNameChanged	sig<RCF::Void>
+SVP_BtListener	37	OnServiceRegistrationStatusChanged	sig<RCF::Void>
+SVP_BtListener	38	OnVoiceRecognitionStatusChanged	sig<RCF::Void>
+SVP_BtListener	39	OnExResponseStatusChanged	sig<RCF::Void>
+SVP_BtListener	40	OnCallStatusChanged	sig<RCF::Void, SVPBtType::COMBINE_CALL_STATUS>
+SVP_BtListener	41	OnConferenceCallCountChanged	sig<RCF::Void>
+SVP_BtListener	42	OnCallTimeChanged	sig<RCF::Void, unsigned int>
+SVP_BtListener	43	OnCallSupportActionChanged	sig<RCF::Void>
+SVP_BtListener	44	OnSpeakerPrivacyModeChanged	sig<RCF::Void>
+SVP_BtListener	45	OnMicrophoneStatus	sig<RCF::Void, int>
+SVP_BtListener	46	OnPhoneBookNumDownloadCmp	sig<RCF::Void, int, unsigned int>
+SVP_BtListener	47	OnPhoneBookDownloadCmp	sig<RCF::Void, int, int>
+SVP_BtListener	48	OnPhoneBookImportCmp	sig<RCF::Void>
+SVP_BtListener	49	OnPbDownloadCountChanged	sig<RCF::Void, int, int>
+SVP_BtListener	50	OnCallHistoryDonwloadCmp	sig<RCF::Void, int>
+SVP_BtListener	51	OnClearMissedCall	sig<RCF::Void>
+SVP_BtListener	52	OnMusicPlayStatusChanged	sig<RCF::Void, SVPBtType::PLAY_STATUS, int>
+SVP_BtListener	53	OnMusicPlayStatusBeforeDisconnect	sig<RCF::Void, SVPBtType::PLAY_STATUS>
+SVP_BtListener	54	OnMusicPlayModeChanged	sig<RCF::Void, unsigned char, unsigned char>
+SVP_BtListener	55	OnMusicPlaytimeChanged	sig<RCF::Void, unsigned int>
+SVP_BtListener	56	OnMusicPlayTrackChanged	sig<RCF::Void>
+SVP_BtListener	57	OnMusicID3Changed	sig<RCF::Void>
+SVP_BtListener	58	OnMusicPlayingListChanged	sig<RCF::Void>
+SVP_BtListener	59	OnMusicPlaytingListCmp	sig<RCF::Void>
+SVP_BtListener	60	OnMusicBrowsingChanged	sig<RCF::Void>
+SVP_BtListener	61	OnBrowserMediaInfoChanged	sig<RCF::Void>
+SVP_BtListener	62	OnMusicPlayerChanged	sig<RCF::Void>
+SVP_BtListener	63	OnAvrcpVersionChanged	sig<RCF::Void>
+SVP_BtListener	64	OnCurBrowserPathChanged	sig<RCF::Void, int, unsigned int>
+SVP_BtListener	65	OnReturnUidTitle	sig<RCF::Void, std::string, std::string>
+SVP_BtListener	66	OnBtAudioValidChanged	sig<RCF::Void, int>
+SVP_BtListener	67	OnMessageDownloadStatus	sig<RCF::Void, SVPBtType::MsgLoadStatus>
+SVP_BtListener	68	OnDeleteSms	sig<RCF::Void>
+SVP_BtListener	69	OnSmsStatusChanged	sig<RCF::Void, int>
+SVP_BtListener	70	OnClearUnreadMessage	sig<RCF::Void>
+SVP_BtListener	71	OnBtUpdateStatusChanged	sig<RCF::Void, SVPBtType::BT_UPDATE_STATUS>
+SVP_BtListener	72	OnBtUpdateProgress	sig<RCF::Void, unsigned short>
+SVP_BtListener	73	OnMusicChanged	sig<RCF::Void>
+SVP_BtListener	74	OnCallActionStatus	sig<RCF::Void, unsigned int, SVPBtType::CALL_ACTION_STATUS, std::string>
+SVP_BtListener	75	OnReconnectStatusChanged	sig<RCF::Void, int>
+SVP_BtListener	76	OnAvpAutoConnectStatus	sig<RCF::Void, SVPBtType::AVP_AUTO_CONNECT_STATUS>
+SVP_BtListener	77	OnErrorLogUpdate	sig<RCF::Void>
+SVP_BtService	0	OpenBt	sig<RCF::Void, int>
+SVP_BtService	1	ShutdownBt	sig<RCF::Void, int>
+SVP_BtService	2	GetBtStatus	sig<SVPBtType::BT_STATUS>
+SVP_BtService	3	GetLastBtEnable	sig<int>
+SVP_BtService	4	GetBtVersion	sig<unsigned int>
+SVP_BtService	5	GetAttribute	sig<int, SVPBtType::Attribute, std::string&>
+SVP_BtService	6	SetAttribute	sig<int, SVPBtType::Attribute, std::string const&>
+SVP_BtService	7	GetCapability	sig<int, SVPBtType::Capability>
+SVP_BtService	8	SetCapability	sig<int, SVPBtType::Capability, int>
+SVP_BtService	9	ConfigTrace	sig<RCF::Void, unsigned short>
+SVP_BtService	10	SetECNRParams	sig<int, std::vector<unsigned char, std::allocator<unsigned char> >&>
+SVP_BtService	11	SetECNRAudioPath	sig<RCF::Void, SVPBtType::ECNR_AUDIO_PATH>
+SVP_BtService	12	SetECNRParamsMode	sig<RCF::Void, SVPBtType::ECNR_PARAMS_MODE>
+SVP_BtService	13	GetECNRParamsMode	sig<SVPBtType::ECNR_PARAMS_MODE>
+SVP_BtService	35	Connect	sig<RCF::Void, std::string, SVPBtType::BT_SERVICE>
+SVP_BtService	37	Disconnect	sig<RCF::Void, SVPBtType::BT_SERVICE>
+SVP_BtService	39	AcceptSspRequest	sig<RCF::Void, int>
+SVP_BtService	40	AcceptPinCodeRequest	sig<RCF::Void, std::string>
+SVP_BtService	43	SetAutoAcceptPairing	sig<int, int>
+SVP_BtService	44	SetAutoAcceptConnect	sig<RCF::Void, int>
+SVP_BtService	45	GetAutoAcceptConnect	sig<int>
+SVP_BtService	52	GetDeviceNum	sig<int, SVPBtType::BT_DEVICE_TYPE>
+SVP_BtService	55	GetDevice	sig<int, int, SVPBtType::SVPBtDevice&, SVPBtType::BT_DEVICE_TYPE>
+SVP_BtService	60	GetHfpConnectAddr	sig<int, std::string&>
+SVP_BtService	62	GetAvpConnectAddr	sig<int, std::string&>
+SVP_CanListener	0	OnCanIgnitionModeChanged	sig<RCF::Void, SVPCanType::SVPCanIgnModeType>
+SVP_CanListener	1	OnCanVehicleSpeedChanged	sig<RCF::Void, unsigned short>
+SVP_CanListener	2	OnCanCarplayInfoChanged	sig<RCF::Void, SVPCanType::SVPCanCarplayInfoType>
+SVP_CanListener	3	OnCanAudioLoweringChange	sig<RCF::Void, int>
+SVP_CanListener	4	OnDescAdaptionBtSettingChanged	sig<RCF::Void, SVPCanType::SVPDescAdaptionBtSettingType>
+SVP_CanListener	5	OnDescAdaptionVehicleCfgChanged	sig<RCF::Void, SVPCanType::SVPDescAdaptionVehicleConfigType>
+SVP_CanListener	6	OnDescAdaptionStickerBitsChanged	sig<RCF::Void, unsigned short>
+SVP_CanListener	7	OnDescCodingVehicleImageChanged	sig<RCF::Void, SVPCanType::SVPDescCodingVehicleImageType>
+SVP_CanListener	8	OnDescCodingBtSettingChanged	sig<RCF::Void, SVPCanType::SVPDescCodingBtSettingType>
+SVP_CanListener	9	OnDescActuatorTestEvent	sig<RCF::Void, SVPCanType::SVPDescActuatorIdType, SVPCanType::SVPDescActuatorCtrlType>
+SVP_CanListener	10	OnDescDatasetDownloadEvent	sig<RCF::Void, SVPCanType::SVPDescDatasetIdType, std::vector<unsigned char, std::allocator<unsigned char> >&>
+SVP_CanListener	11	OnDescRoutineTestEvent	sig<RCF::Void, SVPCanType::SVPDescRoutineIdType, SVPCanType::SVPDescRoutineCtrlType, unsigned char>
+SVP_CanListener	12	OnDescMeasuredValueEvent	sig<RCF::Void, SVPCanType::SVPDescMeasuredIdType>
+SVP_CanListener	13	OnBapScreenViewOptionEvent	sig<RCF::Void, SVPCanType::SVPBapScreenViewIdType, std::vector<unsigned char, std::allocator<unsigned char> >&>
+SVP_CanListener	14	OnBapScreenViewDataEvent	sig<RCF::Void, SVPCanType::SVPBapScreenViewIdType, std::vector<unsigned char, std::allocator<unsigned char> >&>
+SVP_CanListener	15	OnBapScreenViewRequestEvent	sig<RCF::Void, SVPCanType::SVPBapScreenViewIdType, SVPCanType::SVPBapScreenCtrlType>
+SVP_CanListener	16	OnBapPhoneCallActionChange	sig<RCF::Void, SVPCanType::SVPBapPhoneCallActionType, unsigned char>
+SVP_CanListener	17	OnBapStatusBarChanged	sig<RCF::Void, std::vector<unsigned char, std::allocator<unsigned char> >&>
+SVP_CanListener	18	OnBapFsgStateChanged	sig<RCF::Void, SVPCanType::SVPBapFsgStateType, int>
+SVP_CanListener	19	OnBapGeneralPopupChanged	sig<RCF::Void, SVPCanType::SVPBapGeneralPopupType>
+SVP_CanListener	20	OnBapStartStopValueChange	sig<RCF::Void, SVPCanType::SVPStartStopValueIdType, std::vector<unsigned char, std::allocator<unsigned char> >&>
+SVP_CanListener	21	OnBapScreenOffTimerEvent	sig<RCF::Void, SVPCanType::SVPBapScreenOffFuncType, SVPCanType::SVPBapScreenOffTimerType>
+SVP_CanListener	22	OnCanServiceMessage	sig<RCF::Void, unsigned short, std::vector<unsigned char, std::allocator<unsigned char> >&>
+SVP_CanService	0	GetCanIgnitionMode	sig<RCF::Void>
+SVP_CanService	1	GetCanIgnitionMode	sig<RCF::Void, SVPCanType::SVPCanIgnModeType&>
+SVP_CanService	2	GetCanVehicleSpeed	sig<RCF::Void>
+SVP_CanService	3	GetCanCarplayInfo	sig<RCF::Void, SVPCanType::SVPCanCarplayInfoType&>
+SVP_CanService	4	GetCanAudioLoweringPresent	sig<int>
+SVP_CanService	6	GetDescAdaptionBtSetting	sig<RCF::Void, SVPCanType::SVPDescAdaptionBtSettingType&>
+SVP_CanService	7	GetDescAdaptionVehicleCfg	sig<RCF::Void, SVPCanType::SVPDescAdaptionVehicleConfigType&>
+SVP_CanService	8	GetDescAdaptionStickerBits	sig<RCF::Void, unsigned short&>
+SVP_CanService	10	GetDescCodingVehicleImage	sig<RCF::Void, SVPCanType::SVPDescCodingVehicleImageType&>
+SVP_CanService	11	GetDescCodingBtSetting	sig<RCF::Void, SVPCanType::SVPDescCodingBtSettingType&>
+SVP_CanService	12	GetDescCodingHmiSkin	sig<RCF::Void, unsigned char&>
+SVP_CanService	13	GetDescCodingStartScreen	sig<RCF::Void, unsigned char&>
+SVP_CanService	14	SetDescActuatorTestDone	sig<RCF::Void, SVPCanType::SVPDescActuatorIdType, SVPCanType::SVPDescActuatorCtrlType>
+SVP_CanService	15	SetDescDatasetDownloadDone	sig<RCF::Void, SVPCanType::SVPDescDatasetIdType>
+SVP_CanService	16	SetDescRoutineTestDone	sig<RCF::Void, SVPCanType::SVPDescRoutineIdType, SVPCanType::SVPDescRoutineCtrlType, unsigned char>
+SVP_CanService	17	SetDescMeasuredValue	sig<RCF::Void, SVPCanType::SVPDescMeasuredIdType, std::vector<unsigned char, std::allocator<unsigned char> >&>
+SVP_CanService	18	GetDescCarFuncAdaption	sig<RCF::Void, std::vector<unsigned char, std::allocator<unsigned char> >&>
+SVP_CanService	19	SetBapScreenViewRequest	sig<RCF::Void, SVPCanType::SVPBapScreenViewIdType, SVPCanType::SVPBapScreenCtrlType>
+SVP_CanService	20	SetBapScreenViewOptionRequest	sig<RCF::Void, SVPCanType::SVPBapScreenViewIdType>
+SVP_CanService	21	SetBapScreenVauleRequest	sig<RCF::Void, SVPCanType::SVPBapScreenViewIdType>
+SVP_CanService	22	SetBapPhoneDataInfo	sig<RCF::Void, SVPCanType::SVPBapPhoneDataInfoType, std::vector<unsigned char, std::allocator<unsigned char> >&>
+SVP_CanService	23	GetBapStatusBarVal	sig<RCF::Void>
+SVP_CanService	24	SetBapScreenItemVal	sig<RCF::Void, SVPCanType::SVPBapScreenSetIdType, unsigned char>
+SVP_CanService	25	SetBapScreenItemParams	sig<RCF::Void, SVPCanType::SVPBapScreenSetParamIdType, std::vector<unsigned char, std::allocator<unsigned char> >&>
+SVP_CanService	26	GetBapClockFormat	sig<RCF::Void, SVPCanType::SVPBapClockFormatType&>
+SVP_CanService	27	SetBapWakeupFlag	sig<RCF::Void, SVPCanType::SVPBapWakeupFlagType, SVPCanType::SVPBapWakeupStateType>
+SVP_CanService	28	SetBapScreenOffTimer	sig<RCF::Void, SVPCanType::SVPBapScreenOffFuncType, SVPCanType::SVPBapScreenOffTimerType>
+SVP_CanService	29	GetBapRvcOpsState	sig<RCF::Void, SVPCanType::SVPBapRvcOpsStateType&>
+SVP_CanService	30	SendCanServiceMessage	sig<int, unsigned short, std::vector<unsigned char, std::allocator<unsigned char> >&>
+SVP_LocationNotify	0	OnGpsTimeUpdate	sig<RCF::Void, SVPTypeGpsTime&>
+SVP_LocationNotify	1	OnGpsLocationUpdate	sig<RCF::Void, SVPTypeGpsLocation&>
+SVP_LocationNotify	2	OnGpsChannelUpdate	sig<RCF::Void, SVPTypeGpsChannel&>
+SVP_LocationNotify	3	OnDrLocationUpdate	sig<RCF::Void, SVPTypeDrLocation&>
+SVP_LocationNotify	4	OnDrSensorDataUpdate	sig<RCF::Void, SVPTypeDrSensorData&>
+SVP_LocationNotify	5	OnGpsTTFFUpdate	sig<RCF::Void, unsigned short&>
+SVP_LocationService	0	Feedback	sig<int, SVPTypeMmFeedback&>
+SVP_LocationService	1	RestartGPS	sig<int, int>
+SVP_PowerListener	0	OnScreenOffChanged	sig<RCF::Void, unsigned char>
+SVP_PowerListener	1	OnDisplayoffChanged	sig<RCF::Void, int>
+SVP_PowerListener	2	OnPowerStateChanged	sig<RCF::Void, SVPPower::PowerState, unsigned char, unsigned char>
+SVP_PowerListener	3	OnBkLightLevelChanged	sig<RCF::Void, SVPPower::BkLight::BkLightMode, SVPPower::BkLight::BkLightType, unsigned char>
+SVP_PowerService	3	GetPowerState	sig<int, SVPPower::PowerState&, unsigned char&>
+SVP_RmtCallback	0	ProcessMessage	sig<RCF::Void, std::vector<unsigned char, std::allocator<unsigned char> >&>
+SVP_RmtService	0	SetMessageFilter	sig<RCF::Void, unsigned int>
+SVP_RmtService	1	SendMessage	sig<int, std::vector<unsigned char, std::allocator<unsigned char> >&>
+SVP_SourceCallback	0	cbSourceOp	sig<int, int, SVPSource::SourceOp>
+SVP_SourceListener	0	pubSourceStatus	sig<RCF::Void, int, SVPSource::SourceStatus>
+SVP_SourceService	0	RegisterClient	sig<RCF::Void, int>
+SVP_SourceService	1	RequestSource	sig<int, int, int>
+SVP_SourceService	2	ReleaseSource	sig<int, int, int, int>
+SVP_SourceService	3	ConfirmSource	sig<int, int>
+SVP_SourceService	4	SetSourceStatus	sig<int, int, SVPSource::SourceStatus>
+SVP_SourceService	5	GetSourceStatus	sig<SVPSource::SourceStatus, int>
+SVP_SourceService	6	SetIpodAttatchFilterFlag	sig<RCF::Void>
+SVP_SourceService	7	SetDeviceAttachFilterFlag	sig<RCF::Void, int, int>
+SVP_SourceService	8	GetLastBGSource	sig<int>
+SVP_iLMService	0	WaitSurface	sig<int, unsigned int>
+SVP_iLMService	1	ShowSurface	sig<int, unsigned int, int>
+SVP_iLMService	2	SetSurfacePos	sig<int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int>
+SVP_iLMService	3	Screenshot	sig<int, unsigned int, std::string>

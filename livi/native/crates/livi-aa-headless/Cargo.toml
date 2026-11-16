@@ -1,0 +1,21 @@
+# SPDX-FileCopyrightText: 2026
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Headless Android Auto host for the Desay 6RD 035 187B head unit.
+# Reuses livi-aa (USB/AOAP/TLS/session front-end) and livi-aa-stack
+# (AA protocol driver) with NO LIVI UI / compositor / GStreamer in the graph.
+
+[package]
+name = "livi-aa-headless"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+livi-aa.workspace = true
+livi-aa-stack.workspace = true
+livi-carlife-shim.workspace = true
+livi-core-proto.workspace = true
+livi-session-io.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time", "signal"] }

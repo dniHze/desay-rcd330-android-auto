@@ -1,0 +1,6 @@
+#!/bin/sh
+# Our CarLife service is part of the receiver's binary since the Rust port (livi-carlife-shim in
+# aa-headless): the same arguments, the same process (exec). Its process is then named
+# aa-headless too, so aa_run.sh's stop_guarded (killall aa-headless) may only run while the shim
+# is down, as it does now: on the fallbacks, before the slot execs the stock service.
+exec "${0%/*}/aa-headless" shim "$@"
