@@ -384,6 +384,7 @@ __attribute__((constructor)) void init() {
     if (strcmp(g_code, "off") != 0) {
         aa_settings_init();
         aa_radio_init();
+        aa_media_init();
     }
     aa_bt_init();
     aa_appearance_init();

@@ -85,4 +85,9 @@ void aa_bt_init();
 // radio app of a known build. Called once from the library's constructor, unless the state is "off".
 void aa_radio_init();
 
+// The track's cover on the media player's USB screen (media.cpp): installs its hooks when this
+// process is the media player of a known build. Called once from the library's constructor, unless
+// the state is "off".
+void aa_media_init();
+
 #endif
