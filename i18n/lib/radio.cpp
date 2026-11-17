@@ -18,8 +18,9 @@
 //              often is its name. Names are kept in AA_RADIO_STATE ("<freq> <name>" lines), written
 //              when a frequency's name changes, and read at start.
 //   UpdateFMPreset  wrapped: after the stock code, a tile whose frequency has a name shows the name
-//              in the tile's centred layout (below); the others stay as they are. The tiles show a new
-//              name the next time the app refreshes them (a station change, a preset stored, a bank).
+//              in the tile's centred layout (below); the others stay as they are. In the car, a newly
+//              learned name shows once the radio app starts again (not at a station change or when a
+//              preset is stored).
 //   PresetListDataExchanger::OnUpdateItemCtrl  wrapped: it sets a tile's Kanzi nodes from its data.
 //              A tile has two layouts, its SwitchState (+60): 1, a station (Text_Band, the frequency
 //              (+48), 1.5 wide and left of the centre, with Text_Unit (+44) to its right; the state

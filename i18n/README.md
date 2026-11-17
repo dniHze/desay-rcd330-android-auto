@@ -156,8 +156,8 @@ pop-up hook and the apps' own texts.
   (PS) is counted per frequency while it plays; the name a frequency sent most often is its name
   (stations also send song titles in PS), kept in `/storage/data/data/aa/stations`. A preset tile
   with a name shows it, centred, in the tile's own centred layout widened to the tile; the others
-  stay stock. The tiles show a new name at their next refresh (a station change, a preset stored,
-  the app started again).
+  stay stock. In the car, a newly learned name shows once the radio app starts again, not at a
+  station change or when a preset is stored.
 - **Covers on the USB screen** (`lib/media.cpp`, `gen_media.py`): the media service already hands
   the player each track's cover (`SVPPlayerState::SetID3`); the library loads it with Kanzi's own
   image calls, crops it to a square and puts it where the music note's square is.
