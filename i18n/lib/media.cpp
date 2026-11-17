@@ -11,7 +11,8 @@
 //
 // Here, in the media player only, when both functions have exactly the code of a known build (else
 // the note stays), and not with the language "off" (the aa-lang-off card):
-//   SetID3  wrapped: the cover's bytes (up to 4 MB) go to AA_COVER_DIR/aa-cover.jpg or .png
+//   SetID3  wrapped: the cover's bytes (up to 4 MB, and up to 3000 x 3000 pixels by its header, as
+//           it is decoded whole) go to AA_COVER_DIR/aa-cover.jpg or .png
 //           (written to a temporary name, then renamed), or none; a counter tells the UI thread.
 //           It may run outside the UI thread: only the file and two ints are shared.
 //   UpdateID3 (USB)  wrapped, in the UI thread: after the stock code, a new cover is loaded with
@@ -49,7 +50,8 @@ struct MediaFunc {
 const MediaFunc kMediaFuncs[1] = {{"", 0, 0, 0}};
 #endif
 
-const int kMaxCover = 4 << 20;
+const int kMaxCover = 4 << 20;       // bytes of the file
+const unsigned kMaxSide = 3000;      // pixels: decoded whole before the crop (3000 x 3000 RGB, 27 MB)
 
 typedef void (*SetId3)(void*, const void*);
 typedef void (*Method0)(void*);
@@ -99,15 +101,53 @@ const char* cover_path(int kind) {
     return kind == 2 ? AA_COVER_DIR "/aa-cover.png" : AA_COVER_DIR "/aa-cover.jpg";
 }
 
+// The picture's size from its header: PNG's IHDR, or a JPEG's first SOFn (frame) marker. The file
+// size says nothing about it: a small file can declare a picture that takes gigabytes to decode.
+bool picture_size(const unsigned char* p, int n, int kind, unsigned& w, unsigned& h) {
+    if (kind == 2) {
+        if (n < 24 || memcmp(p + 12, "IHDR", 4) != 0)
+            return false;
+        w = (unsigned(p[16]) << 24) | (p[17] << 16) | (p[18] << 8) | p[19];
+        h = (unsigned(p[20]) << 24) | (p[21] << 16) | (p[22] << 8) | p[23];
+        return true;
+    }
+    for (int i = 2; i + 4 <= n;) {  // JPEG: markers FF xx, each but the standalone ones with a length
+        if (p[i] != 0xFF)
+            return false;
+        int m = p[i + 1];
+        if (m == 0xFF || m == 0x01 || (m >= 0xD0 && m <= 0xD8)) {  // fill byte, TEM, RSTn, SOI
+            i += m == 0xFF ? 1 : 2;
+            continue;
+        }
+        if (m == 0xD9 || m == 0xDA)  // EOI or the scan before any frame
+            return false;
+        int len = (p[i + 2] << 8) | p[i + 3];
+        if (m >= 0xC0 && m <= 0xCF && m != 0xC4 && m != 0xC8 && m != 0xCC) {  // SOFn
+            if (len < 7 || i + 9 > n)
+                return false;
+            h = (p[i + 5] << 8) | p[i + 6];
+            w = (p[i + 7] << 8) | p[i + 8];
+            return true;
+        }
+        if (len < 2)
+            return false;
+        i += 2 + len;
+    }
+    return false;
+}
+
 void hook_set_id3(void* self, const void* id3) {
     const char* p = static_cast<const char*>(id3);
     int size = *reinterpret_cast<const int*>(p + 16);
     const unsigned char* img = *reinterpret_cast<unsigned char* const*>(p + 24);
     int kind = 0;
+    unsigned w = 0, h = 0;
     if (img && size > 8 && size <= kMaxCover) {
         kind = img[0] == 0x89 && img[1] == 'P' && img[2] == 'N' && img[3] == 'G' ? 2
                : img[0] == 0xFF && img[1] == 0xD8                                ? 1
                                                                                  : 0;
+        if (kind && (!picture_size(img, size, kind, w, h) || !w || !h || w > kMaxSide || h > kMaxSide))
+            kind = 0;  // a picture too large to decode here, or one whose size cannot be read: the note
         const char* tmp = AA_COVER_DIR "/aa-cover.tmp";
         FILE* f = kind ? fopen(tmp, "wb") : 0;
         bool ok = f && fwrite(img, 1, size, f) == static_cast<size_t>(size);
