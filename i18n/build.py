@@ -49,6 +49,7 @@ def main():
     ap.add_argument("--base", required=True)
     ap.add_argument("--aa-appconnect")
     ap.add_argument("--launcher-bin", help="the stock bin/launcher (Settings > Appearance's launcher hooks)")
+    ap.add_argument("--radio-bin", help="the stock bin/radio (station names on the FM presets)")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     out = os.path.abspath(a.out)
@@ -65,6 +66,8 @@ def main():
     run(*py, os.path.join(HERE, "gen_texts.py"), os.path.join(work, "texts.inc"))
     if a.launcher_bin:
         run(*py, os.path.join(HERE, "gen_launcher.py"), a.launcher_bin, os.path.join(work, "launcher.inc"))
+    if a.radio_bin:
+        run(*py, os.path.join(HERE, "gen_radio.py"), a.radio_bin, os.path.join(work, "radio.inc"))
     if a.aa_appconnect:
         run(*py, os.path.join(HERE, "literals.py"), "verify", os.path.join(work, "literals.inc"), "appconnect", a.aa_appconnect)
     w = lambda p: "/w/" + os.path.relpath(p, WORK)  # noqa: E731
@@ -72,6 +75,8 @@ def main():
         w(os.path.join(work, "settings.inc")), w(os.path.join(work, "literals.inc")), w(os.path.join(work, "texts.inc")))
     if a.launcher_bin:
         settings += " -DAA_LAUNCHER='\"%s\"'" % w(os.path.join(work, "launcher.inc"))
+    if a.radio_bin:
+        settings += " -DAA_RADIO='\"%s\"'" % w(os.path.join(work, "radio.inc"))
     script = ("set -e; bash /w/i18n/lib/build.sh %s %s plain %s; bash /w/i18n/lib/build.sh %s %s aa %s"
               % (w(os.path.join(work, "plain.inc")), w(os.path.join(out, "libUIPublic.so")), settings,
                  w(os.path.join(work, "aa.inc")), w(os.path.join(out, "aa_libUIPublic.so")), settings))

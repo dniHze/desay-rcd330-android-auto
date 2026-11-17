@@ -115,6 +115,7 @@ BASES = {
             "setting.kzb": "fb15a8ab35ebea6ffb6c560406e6eb82",
             "setting": "ef39e20f6e43133fbbd3a2f04044be4b",
             "launcher": "4f00f44c523ef524b1a7c5896fb46400",
+            "radio": "15665501b78578a0569665935d24edbe",  # station names on the presets (i18n/gen_radio.py)
         },
         "sidecar": ["VERSION:SVP30.6@C1", "ROLL_BACK_NO:1", "VERSION:MP2017_PQ_07.54_200303__C", "ROLL_BACK_NO:1",
                     "VERSION:07.54_200303__C", "ROLL_BACK_NO:1", "PROJECT:GEN2_PQ_MP2017",
@@ -124,6 +125,7 @@ BASES = {
 APPC_PKG = "./sv.g5.mib2.appconnect-1.0.0.pkg"
 SETTING_PKG = "./sv.g5.mib2.setting-1.0.0.pkg"
 LAUNCHER_PKG = "./sv.g5.mib2.launcher-1.0.0.pkg"
+RADIO_PKG = "./sv.g5.mib2.radio-1.0.0.pkg"  # a base whose BASES entry has no "radio" md5 builds without
 APPC = "/storage/app/sv.g5.mib2.appconnect"
 GROWTH_BUDGET = 12 * 1024 * 1024  # uncompressed bytes added to /svp
 
@@ -278,6 +280,7 @@ def main():
         _, pkg = tar_member(t, APPC_PKG)
         _, spkg = tar_member(t, SETTING_PKG)
         _, lpkg = tar_member(t, LAUNCHER_PKG)
+        rpkg = tar_member(t, RADIO_PKG)[1] if "radio" in STOCK else None
     with tarfile.open(fileobj=io.BytesIO(pkg), mode="r:gz") as t:
         _, appconnect = tar_member(t, "bin/appconnect")
         _, kzb = tar_member(t, "res/VW_MP2017.kzb")
@@ -286,9 +289,13 @@ def main():
         _, setting_bin = tar_member(t, "bin/setting")
     with tarfile.open(fileobj=io.BytesIO(lpkg), mode="r:gz") as t:
         _, launcher = tar_member(t, "bin/launcher")
-    for key, data in (("carlifeservice", carlife), ("libUIPublic.so", libui), ("appconnect", appconnect),
-                      ("VW_MP2017.kzb", kzb), ("setting.kzb", setting_kzb), ("setting", setting_bin),
-                      ("launcher", launcher)):
+    stock_files = [("carlifeservice", carlife), ("libUIPublic.so", libui), ("appconnect", appconnect),
+                   ("VW_MP2017.kzb", kzb), ("setting.kzb", setting_kzb), ("setting", setting_bin),
+                   ("launcher", launcher)]
+    if rpkg:
+        with tarfile.open(fileobj=io.BytesIO(rpkg), mode="r:gz") as t:
+            stock_files.append(("radio", tar_member(t, "bin/radio")[1]))
+    for key, data in stock_files:
         if md5(data) != STOCK[key]:
             die("stock %s md5 %s, expected %s" % (key, md5(data), STOCK[key]))
         with open(os.path.join(stock_dir, key), "wb") as f:
@@ -305,6 +312,7 @@ def main():
         "--rebranded-lib", os.path.join(rb, "lib/libUIPublic.so"), "--setting-kzb", os.path.join(stock_dir, "setting.kzb"),
         "--setting-bin", os.path.join(stock_dir, "setting"), "--base", a.base,
         "--launcher-bin", os.path.join(stock_dir, "launcher"),
+        *(["--radio-bin", os.path.join(stock_dir, "radio")] if rpkg else []),
         "--aa-appconnect", os.path.join(rb, "aa_appconnect"), "--out", lang)
 
     print("[3] artifacts against the lock")

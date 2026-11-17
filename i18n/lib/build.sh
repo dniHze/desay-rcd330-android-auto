@@ -40,7 +40,7 @@ DEFS=()
 "${CXX}" -std=gnu++11 -O2 -fPIC -shared -fvisibility=hidden -D_GLIBCXX_USE_CXX11_ABI=0 \
     -Wall -Wextra -Wno-unused-parameter -DAA_TABLE="\"${TABLE}\"" "${DEFS[@]}" "$@" \
     "${HERE}/uipublic.cpp" "${HERE}/settings.cpp" "${HERE}/literals.cpp" "${HERE}/bluetooth.cpp" \
-    "${HERE}/appearance.cpp" -lpthread \
+    "${HERE}/appearance.cpp" "${HERE}/radio.cpp" -lpthread \
     -Wl,-soname,libUIPublic.so -Wl,--allow-shlib-undefined -Wl,--hash-style=gnu -Wl,--build-id=none \
     -nodefaultlibs "${SYSROOT}/lib/libstdc++.so.6" "${SYSROOT}/lib/libgcc_s.so.1" -ldl -lc -lgcc \
     -o "${OUT}.tmp"

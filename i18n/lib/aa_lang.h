@@ -81,4 +81,8 @@ void aa_appearance_init();
 // language state.
 void aa_bt_init();
 
+// Station names on the FM preset tiles (radio.cpp): installs its hooks when this process is the
+// radio app of a known build. Called once from the library's constructor, unless the state is "off".
+void aa_radio_init();
+
 #endif

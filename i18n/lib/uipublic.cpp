@@ -381,8 +381,10 @@ __attribute__((constructor)) void init() {
     apply(code);
     syslog(LOG_INFO, "aa-lang: %s (%d languages%s%s)", g_code, aa_lang_count(), g_state ? "" : ", no state file",
            g_created ? ", state created" : "");
-    if (strcmp(g_code, "off") != 0)
+    if (strcmp(g_code, "off") != 0) {
         aa_settings_init();
+        aa_radio_init();
+    }
     aa_bt_init();
     aa_appearance_init();
 }
