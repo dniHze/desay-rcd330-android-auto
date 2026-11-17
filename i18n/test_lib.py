@@ -26,6 +26,7 @@ stock phrase book and the sheet:
 """
 import csv
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -177,7 +178,10 @@ def main():
     scenario("0317-plain", "litlen", "good", "uk", ["lit=%d,len" % welcome] + lenseq)
     scenario("0317-plain", "litlenbad", "good", "uk", ["lit=%d,len,badlen" % welcome, "litlentext"])
     scenario("0317-aa", "lit", "good", "uk", ["lit=%d" % carlife, "littext"])
-    docker("debian:bookworm", "\n".join(run))
+    # qemu-arm runs on the host's own architecture: on an x86-64 host, an arm64 container (itself
+    # emulated) cannot reserve qemu-arm's guest address space.
+    docker("debian:bookworm", "\n".join(run),
+           platform="linux/amd64" if platform.machine() == "x86_64" else "linux/arm64")
     print("ran the scenarios under qemu")
 
     for base in have:
