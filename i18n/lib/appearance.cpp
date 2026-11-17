@@ -50,12 +50,13 @@ struct Theme {
     const char* text;  // aa_text key of its name
     uint8_t r, g, b;
 };
-// Automatic, then the launcher's three (SetDescSkinType's table).
+// Automatic, then the launcher's three (SetDescSkinType's table), then green (ours).
 const Theme kThemes[] = {
     {"auto", "auto", 0, 0, 0},
     {"amber", "theme_amber", 255, 190, 0},
     {"red", "theme_red", 233, 0, 0},
     {"blue", "theme_blue", 30, 40, 255},
+    {"green", "theme_green", 75, 168, 46},  // Skoda Green (#4BA82E); not a coding choice
 };
 const int kThemeCount = sizeof kThemes / sizeof kThemes[0];
 

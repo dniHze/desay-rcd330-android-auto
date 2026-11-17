@@ -146,7 +146,7 @@ I18N = {"libUIPublic.so": "./lib/libUIPublic.so", "aa_lang.bin": "./share/aa_lan
 with open(os.path.join(WORK, "i18n", "languages.csv"), encoding="utf-8-sig") as _f:
     for _flag in sorted(l.split(",")[3] for l in _f.read().splitlines()[1:] if l.strip()):
         I18N["aa_lang_%s.png" % _flag] = "./share/aa_lang_%s.png" % _flag
-for _pic in ("theme_auto", "theme_amber", "theme_red", "theme_blue", "blank"):  # Settings > Appearance
+for _pic in ("theme_auto", "theme_amber", "theme_red", "theme_blue", "theme_green", "blank"):  # Settings > Appearance
     I18N["aa_%s.png" % _pic] = "./share/aa_%s.png" % _pic
 REPLACED = ("./bin/carlifeservice", "./lib/libUIPublic.so")  # stock members the image replaces
 

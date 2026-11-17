@@ -240,7 +240,8 @@ def framed(template, picture):
 
 # Settings > Appearance's colour themes (appearance.cpp's kThemes): auto shows the three side by
 # side (the car's coding picks one).
-THEMES = {"amber": (255, 190, 0), "red": (233, 0, 0), "blue": (30, 40, 255)}
+THEMES = {"amber": (255, 190, 0), "red": (233, 0, 0), "blue": (30, 40, 255), "green": (75, 168, 46)}
+CODED = ("amber", "red", "blue")  # the ones the car's coding can choose: auto's swatch
 FRAME = (INNER[0] - 2, INNER[1] - 2, INNER[2] + 2, INNER[3] + 2)  # the flags' frame: 30 x 21
 
 
@@ -268,7 +269,7 @@ def square(template, rgbs):
 def swatches(template):
     """{theme_<key>: a square swatch in the flags' frame} and {blank: a transparent picture}."""
     out = {"theme_" + key: square(template, [rgb]) for key, rgb in THEMES.items()}
-    out["theme_auto"] = square(template, list(THEMES.values()))
+    out["theme_auto"] = square(template, [THEMES[k] for k in CODED])
     out["blank"] = Image.new("RGBA", template.size, (0, 0, 0, 0))
     return out
 
