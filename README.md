@@ -49,8 +49,12 @@ CarLife must be enabled in the unit's coding: without it, AppConnect shows no ti
 
   🇨🇿 CS / 🇩🇰 DA / 🇩🇪 DE / 🇺🇸 EN / 🇪🇸 ES / 🇭🇷 HR / 🇮🇹 IT / 🇭🇺 HU / 🇳🇱 NL / 🇵🇱 PL / 🇵🇹 PT / 🇷🇴 RO / 🇫🇮 FI / 🇸🇪 SV / 🇹🇷 TR / 🇺🇦 UK / 🇨🇳 ZH
 
-- **Settings > Appearance:** the menus' color (amber, red, blue, or as the car is coded) and the
-  start screen picture, kept over the car's coding.
+- **Settings > Appearance:** the menus' color (amber, red, blue, green, or as the car is coded) and
+  the start screen picture, kept over the car's coding.
+- **Station names on the FM presets:** a preset tile shows the station's RDS name in place of its
+  frequency, once the unit has heard that station.
+- **Covers on the USB screen:** the cover in the track's tags (JPEG or PNG) in place of the music
+  note.
 - **Logs on a card:** an `aa-logs` folder on an SD card or USB stick gets the unit's logs, one
   folder per boot.
 - **Switches:** `aa-off` / `aa-on`, `aa-lang-off`, `aa-appearance-off` files on a card turn each
