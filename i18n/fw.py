@@ -42,6 +42,12 @@ def bases():
     return build_update.BASES
 
 
+def present():
+    """The bases whose stock image is in place. Both have the same phrase book (libUIPublic.so),
+    so the sheet's stock texts can come from one."""
+    return [b for b, v in bases().items() if b in BASE_NAMES and os.path.exists(os.path.join(v["dir"], v["name"]))]
+
+
 def md5(data):
     return hashlib.md5(data).hexdigest()
 

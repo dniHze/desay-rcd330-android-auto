@@ -147,11 +147,23 @@ pop-up hook and the apps' own texts.
   code, to the chosen language's text in `aa_lang.bin`, only if every word is the stock one.
 - **No Bluetooth pop-ups over Android Auto** (`lib/bluetooth.cpp`): the Bluetooth app's pop-ups
   are held back while the shim's `/tmp/run/aa/ontop` says Android Auto is on screen.
-- **Settings > Appearance** (`lib/appearance.cpp`): the color theme (Automatic, Amber, Red, Blue)
+- **Settings > Appearance** (`lib/appearance.cpp`): the color theme (Automatic, Amber, Red, Blue, Green)
   and the start screen (Automatic or one of twelve pictures). The choice lives in
   `/storage/data/data/aa/appearance`; the launcher app's color is hooked while one is chosen, and
   the start screen's index is written to the NOR flash, where the coding keeps its own.
   `aa-appearance-off` or `AA_APPEARANCE=0` sets both back to the coding.
+- **Station names on the FM presets** (`lib/radio.cpp`, `gen_radio.py`): the radio app's RDS name
+  (PS) is counted per frequency while it plays; the name a frequency sent most often is its name
+  (stations also send song titles in PS), kept in `/storage/data/data/aa/stations`. A preset tile
+  with a name shows it, centred, in the tile's own centred layout widened to the tile; the others
+  stay stock. In the car, a newly learned name shows once the radio app starts again, not at a
+  station change or when a preset is stored.
+- **Covers on the USB screen** (`lib/media.cpp`, `gen_media.py`): the media service already hands
+  the player each track's cover (`SVPPlayerState::SetID3`); the library loads it with Kanzi's own
+  image calls, crops it to a square and puts it where the music note's square is.
+
+Both hook only a build whose functions are byte for byte the known ones, and `aa-lang-off` turns
+them off with the languages.
 
 More: [`docs/architecture.md`](../docs/architecture.md#languages-and-appearance).
 

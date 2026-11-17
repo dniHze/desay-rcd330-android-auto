@@ -26,6 +26,7 @@ stock phrase book and the sheet:
 """
 import csv
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -89,7 +90,8 @@ def main():
         sheet = {r["id"]: r for r in csv.DictReader(f)}
     # Inputs: tables, data files, the AA variant's rebranded library.
     targets = []
-    for base in fw.BASE_NAMES:
+    have = fw.present()  # a base without its stock image is not tested
+    for base in have:
         lib = os.path.join(fw.unpack(base), "svp", "lib", "libUIPublic.so")
         targets.append((base, "plain", lib, lib))
     rb = os.path.join(T, "rebrand")
@@ -110,7 +112,7 @@ def main():
         cmds.append("bash /w/i18n/lib/build.sh %s %s %s -DAA_LANG_TEST -DAA_LANG_STATE='\"%s\"' -DAA_LANG_DATA='\"%s\"' "
                     "-DAA_LITERALS='\"%s\"' >/dev/null"
                     % (w(os.path.join(T, tag + ".inc")), w(os.path.join(T, tag + ".so")), variant, STATE, DATA, w(lits)))
-    for base in fw.BASE_NAMES:
+    for base in have:
         build_table.build(os.path.join(fw.tree(base), "svp", "lib", "libUIPublic.so"), os.path.join(T, "strings-%s.bin" % base))
     # Both bases have the same phrase book; a strings.bin for another one differs in the md5 of
     # its English texts (the header's, at byte 20).
@@ -142,7 +144,7 @@ def main():
         run.extend(lines)
 
     rec = lambda code: "AALANG1 %-23s\n" % code  # noqa: E731
-    for tag in ("0317-plain", "0394-plain"):
+    for tag in (b + "-plain" for b in have):
         d = "%s/%s-" % (out, tag)
         scenario(tag, "off", "good", "off", ["car=0", "dump=%soff0.tsv" % d, "car=1", "dump=%soff1.tsv" % d])
         scenario(tag, "missing1", "good", None, ["car=1", "dump=%smissing1.tsv" % d, "info"])
@@ -176,10 +178,13 @@ def main():
     scenario("0317-plain", "litlen", "good", "uk", ["lit=%d,len" % welcome] + lenseq)
     scenario("0317-plain", "litlenbad", "good", "uk", ["lit=%d,len,badlen" % welcome, "litlentext"])
     scenario("0317-aa", "lit", "good", "uk", ["lit=%d" % carlife, "littext"])
-    docker("debian:bookworm", "\n".join(run))
+    # qemu-arm runs on the host's own architecture: on an x86-64 host, an arm64 container (itself
+    # emulated) cannot reserve qemu-arm's guest address space.
+    docker("debian:bookworm", "\n".join(run),
+           platform="linux/amd64" if platform.machine() == "x86_64" else "linux/arm64")
     print("ran the scenarios under qemu")
 
-    for base in fw.BASE_NAMES:
+    for base in have:
         tag = base + "-plain"
         p = lambda name: os.path.join(T, "%s-%s" % (tag, name))  # noqa: E731
         book = fw.phrasebook(os.path.join(fw.tree(base), "svp", "lib", "libUIPublic.so"))

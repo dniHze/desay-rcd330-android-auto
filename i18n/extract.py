@@ -99,16 +99,19 @@ def evidence(base):
 
 
 def main():
-    books = {b: fw.phrasebook(os.path.join(fw.unpack(b), "svp", "lib", "libUIPublic.so")) for b in fw.BASE_NAMES}
-    ev = {b: evidence(b) for b in fw.BASE_NAMES}
-    a, b = (books[x] for x in fw.BASE_NAMES)
+    have = fw.present()
+    if not have:
+        sys.exit("no stock image in place (sysupdate/build_update.py BASES)")
+    books = {b: fw.phrasebook(os.path.join(fw.unpack(b), "svp", "lib", "libUIPublic.so")) for b in have}
+    ev = {b: evidence(b) for b in have}
+    a, b = books[have[0]], books[have[-1]]
     for i in range(min(len(a), len(b))):
         if a[i][1:] != b[i][1:]:
-            sys.exit("phrase %d differs between %s and %s: %r / %r" % ((i,) + fw.BASE_NAMES + (a[i], b[i])))
+            sys.exit("phrase %d differs between %s and %s: %r / %r" % (i, have[0], have[-1], a[i], b[i]))
     old = read_sheet()
     rows = {}
     apps_of = {}
-    for base in fw.BASE_NAMES:
+    for base in have:
         for k, recs in ev[base].items():
             if k != "?":
                 apps_of.setdefault(int(k), set()).update(r["app"] for r in recs)
@@ -135,17 +138,17 @@ def main():
             group = UNIVERSAL if len(en_apps[en]) >= 3 and len(en) <= 30 else APPS[twin_apps[0]]
         else:
             group = NOT_FOUND
-        rows[str(i)] = {"id": str(i), "in_" + fw.BASE_NAMES[0]: "yes" if i < len(a) else "",
-                        "in_" + fw.BASE_NAMES[1]: "yes" if i < len(b) else "", "group": group,
-                        "apps": ", ".join(APPS[x] for x in apps), "en": esc(en), "zh": esc(zh)}
+        rows[str(i)] = {"id": str(i), "group": group, "apps": ", ".join(APPS[x] for x in apps),
+                        "en": esc(en), "zh": esc(zh),
+                        **{"in_" + x: "yes" if x in books and i < len(books[x]) else "" for x in fw.BASE_NAMES}}
     lits = [r for rid, r in old.items() if rid.startswith("lit:")]
     if lits:
         import literals
-        found = {base: literals.coverage(base) for base in fw.BASE_NAMES}
+        found = {base: literals.coverage(base) for base in have}
         for r in lits:
             rows[r["id"]] = dict(r)
             for base in fw.BASE_NAMES:
-                rows[r["id"]]["in_" + base] = "yes" if r["id"] in found[base] else ""
+                rows[r["id"]]["in_" + base] = "yes" if r["id"] in found.get(base, ()) else ""
     langs = [l for l in columns() if l not in FIXED + TAIL]
     changed = 0
     for rid, r in rows.items():

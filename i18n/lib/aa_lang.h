@@ -60,7 +60,7 @@ bool aa_hook_jump(uint32_t addr, const void* target);
 
 // Settings > Appearance (appearance.cpp). aa_text: one of our own texts (the sheet's "lit:aa:"
 // rows) in the language in force, English where it has none. Themes: 0 Automatic (the coding),
-// then amber, red, blue; aa_theme_rgb is 0x00RRGGBB (Automatic: the coded colour). Start screens:
+// then amber, red, blue, green; aa_theme_rgb is 0x00RRGGBB (Automatic: the coded colour). Start screens:
 // 0 Automatic, then the 12 logos in NOR's order. *_select stores the choice and applies it now;
 // 0 on success. aa_appearance_init: the launcher's hooks, from the constructor.
 const char* aa_text(const char* key);
@@ -80,5 +80,14 @@ void aa_appearance_init();
 // this process is the Bluetooth app. Called once from the library's constructor, whatever the
 // language state.
 void aa_bt_init();
+
+// Station names on the FM preset tiles (radio.cpp): installs its hooks when this process is the
+// radio app of a known build. Called once from the library's constructor, unless the state is "off".
+void aa_radio_init();
+
+// The track's cover on the media player's USB screen (media.cpp): installs its hooks when this
+// process is the media player of a known build. Called once from the library's constructor, unless
+// the state is "off".
+void aa_media_init();
 
 #endif
